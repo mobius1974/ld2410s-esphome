@@ -172,7 +172,6 @@ namespace esphome
 
             while (retry)
             {
-                App.feed_wdt();
                 frame.length = 0;
                 uint16_t frame_data_bytes = frame.data_length + 2;
                 // HEADER
@@ -204,6 +203,7 @@ namespace esphome
                 bool reply = false;
 
                 while (!reply) {
+                    App.feed_wdt();
                     uint8_t ack_buffer[64];
                     size_t last_pos = 0;
                     while (available()) {
