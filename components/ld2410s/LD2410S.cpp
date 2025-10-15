@@ -1,4 +1,5 @@
 #include "esphome/core/log.h"
+#include "esphome/core/application.h"
 #include "LD2410S.h"
 
 namespace esphome
@@ -171,6 +172,7 @@ namespace esphome
 
             while (retry)
             {
+                App.feed_wdt();
                 frame.length = 0;
                 uint16_t frame_data_bytes = frame.data_length + 2;
                 // HEADER
