@@ -1,167 +1,387 @@
 #pragma once
 
+#define LD2410S_V2
+
+// core
+#include "esphome/core/application.h"
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
+#include "esphome/core/defines.h"
+#include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
+
+// components
 #include "esphome/components/uart/uart.h"
-#ifdef USE_NUMBER
-#include "esphome/components/number/number.h"
+
+#ifdef LD2410S_V2
+
+#ifdef USE_SENSOR
+#include "esphome/components/sensor/sensor.h"
+#endif
+#ifdef USE_BINARY_SENSOR
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#endif
+#ifdef USE_TEXT_SENSOR
+#include "esphome/components/text_sensor/text_sensor.h"
 #endif
 #ifdef USE_BUTTON
 #include "esphome/components/button/button.h"
+#endif
+#ifdef USE_NUMBER
+#include "esphome/components/number/number.h"
+#endif
+#ifdef USE_SWITCH
+#include "esphome/components/switch/switch.h"
 #endif
 #ifdef USE_SELECT
 #include "esphome/components/select/select.h"
 #endif
 
+#endif
+
+// std
+#include <functional>
+#include <iomanip>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
 namespace esphome {
-    namespace ld2410s {
-        // Short reporting format
-        static const uint16_t DATA_FRAME_HEADER = 0x6E;
-        static const uint16_t DATA_FRAME_FOOTER = 0x62;
+namespace ld2410s {
 
-        static const uint32_t CMD_FRAME_HEADER = 0xFAFBFCFD;
-        static const uint32_t CMD_FRAME_FOOTER = 0x01020304;
-        static const uint32_t THRESHOLD_HEADER = 0xF1F2F3F4;
-        static const uint32_t THRESHOLD_FOOTER = 0xF5F6F7F8;
+#pragma region ld2410s specific Constants
 
-        static const uint16_t READ_FW_CMD = 0x0000;
-        static const uint16_t START_CONFIG_MODE_CMD = 0x00FF;
-        static const uint16_t END_CONFIG_MODE_CMD = 0x00FE;
-        static const uint16_t WRITE_PARAMS_CMD = 0x0070;
-        static const uint16_t READ_PARAMS_CMD = 0x0071;
-        static const uint16_t AUTO_UPDATE_THRESHOLD_CMD = 0x0009;
+// Constants
+static const char *const TAG = "ld2410s";
 
-        static const uint16_t START_CONFIG_MODE_VALUE = 0x0001;
-        static const uint16_t CFG_MAX_DETECTION_VALUE = 0x0005;
-        static const uint16_t CFG_MIN_DETECTION_VALUE = 0x000A;
-        static const uint16_t CFG_NO_DELAY_VALUE = 0x0006;
-        static const uint16_t CFG_STATUS_FREQ_VALUE = 0x0002;
-        static const uint16_t CFG_DISTANCE_FREQ_VALUE = 0x000C;
-        static const uint16_t CFG_RESPONSE_SPEED_VALUE = 0x000B;
-        static const uint16_t THRESHOLD_TRIGGER_VALUE = 0x0002;
-        static const uint16_t THRESHOLD_RETENTION_VALUE = 0x0001;
-        static const uint16_t THRESHOLD_TIME_VALUE = 0x0078;
+static const uint16_t CMD_CONFIRMATION = 0x0100;  // Command confirmation response code
 
-        static const uint16_t START_CONFIG_MODE_REPLAY = 0x01FF;
-        static const uint16_t END_CONFIG_MODE_REPLAY = 0x01FE;
-        static const uint16_t WRITE_PARAMS_REPLAY = 0x0170;
-        static const uint16_t READ_PARAMS_REPLAY = 0x0171;
-        static const uint16_t READ_FW_REPLAY = 0x0100;
+static const uint8_t SHORT_DATA_FRAME_HEADER = 0x6E;
+static const uint8_t SHORT_DATA_FRAME_FOOTER = 0x62;
+static const uint32_t STD_DATA_FRAME_HEADER = 0xF1F2F3F4;
+static const uint32_t STD_DATA_FRAME_FOOTER = 0xF5F6F7F8;
+static const uint32_t CMD_FRAME_HEADER = 0xFAFBFCFD;
+static const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 
-        static const std::string RESPONSE_SPEED_NORMAL = "Normal";
-        static const std::string RESPONSE_SPEED_FAST = "Fast";
+static const uint16_t CONFIG_MODE_START_CMD = 0x00FF;
+static const uint16_t CONFIG_MODE_START_VALUE = 0x0001;
+static const uint16_t CONFIG_MODE_END_CMD = 0x00FE;
 
-        struct Config {
-            uint32_t max_dist{ 0 };
-            uint32_t min_dist{ 0 };
-            uint32_t delay{ 0 };
-            uint32_t status_freq{ 0 };
-            uint32_t dist_freq{ 0 };
-            uint32_t resp_speed{ 0 };
-        };
+static const uint16_t OUTPUT_MODE_SWITCH_CMD = 0x007A;
+static const uint8_t OUTPUT_MODE_VALUE_STD[] = {0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+static const uint8_t OUTPUT_MODE_VALUE_MIN[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-        struct CmdFrameT {
-            uint32_t header{ 0 };
-            uint16_t length{ 0 };
-            uint16_t command{ 0 };
-            uint8_t data[36];
-            uint16_t data_length{ 0 };
-            uint32_t footer{ 0 };
-        };
+static const uint16_t CALIBRATION_CMD = 0x0009;
+static const uint16_t CALIBRATION_TRIGGER_VALUE = 0x0002;
+static const uint16_t CALIBRATION_RETENTION_VALUE = 0x0001;
+static const uint16_t CALIBRATION_TIME_VALUE = 0x0078;
 
-        struct CmdAckT {
-            uint16_t command{ 0 };
-            uint8_t data[36];
-            uint16_t length{ 0 };
-            bool result{ false };
-        };
+static const uint16_t CFG_FW_READ_CMD = 0x0000;
 
-        enum class PackageType {
-            ACK,
-            SHORT_DATA,
-            TRESHOLD,
-            UNKNOWN
-        };
+static const uint16_t CFG_PARAMS_READ_CMD = 0x0071;
+static const uint16_t CFG_PARAMS_WRITE_CMD = 0x0070;
+static const uint16_t CFG_MAX_DETECTION_VALUE = 0x0005;
+static const uint16_t CFG_MIN_DETECTION_VALUE = 0x000A;
+static const uint16_t CFG_NO_DELAY_VALUE = 0x0006;
+static const uint16_t CFG_STATUS_FREQ_VALUE = 0x0002;
+static const uint16_t CFG_DISTANCE_FREQ_VALUE = 0x000C;
+static const uint16_t CFG_RESPONSE_SPEED_VALUE = 0x000B;
+static const std::string CFG_RESPONSE_SPEED_NORMAL = "Normal";
+static const std::string CFG_RESPONSE_SPEED_FAST = "Fast";
 
-        class LD2410SListener {
-        public:
-            virtual void on_presence(bool presence) {};
-            virtual void on_distance(int distance) {};
-            virtual void on_threshold_update(bool running) {};
-            virtual void on_threshold_progress(int progress) {};
-            virtual void on_fw_version(std::string& fw) {};
-        };
+static const uint16_t CFG_GATE_THRESHOLD_TRIGGER_READ_CMD = 0x0073;
+static const uint16_t CFG_GATE_THRESHOLD_TRIGGER_WRITE_CMD = 0x0072;
+static const uint32_t CFG_GATE_THRESHOLD_TRIGGER_WRITE_DATA[] = {
+    48, 42, 36, 34, 32, 31, 31, 31, 31,
+    31, 31, 31, 31, 31, 31, 31
+    // 10~95 dB
+};
 
-        class LD2410S : public uart::UARTDevice, public Component {
-        public:
-            Config new_config;
+static const uint16_t CFG_GATE_THRESHOLD_HOLD_READ_CMD = 0x0077;
+static const uint16_t CFG_GATE_THRESHOLD_HOLD_WRITE_CMD = 0x0076;
+static const uint32_t CFG_GATE_THRESHOLD_HOLD_WRITE_DATA[] = {
+    45, 42, 33, 32, 28, 28, 28, 28, 28,
+    28, 28, 28, 28, 28, 28, 28
+    // 10~95 dB
+};
 
-            void setup() override;
-            void loop() override;
-            float get_setup_priority() const override;
+static const uint16_t CFG_GATE_THRESHOLD_SNR_READ_CMD = 0x0075;
+static const uint16_t CFG_GATE_THRESHOLD_SNR_WRITE_CMD = 0x0074;
+static const uint32_t CFG_GATE_THRESHOLD_SNR_WRITE_DATA[] = {
+    51, 50, 30, 28, 25, 25, 25, 25, 25,
+    25, 25, 25, 25, 22, 22, 22
+    // 5~63 dB
+};
 
-            void register_listener(LD2410SListener* listener) { this->listeners.push_back(listener); };
-            void set_config_mode(bool enabled);
-            void apply_config();
-            void start_auto_threshold_update();
-#ifdef USE_NUMBER
-            void set_max_distance_number(number::Number* max_distance_number) { this->max_distance_number = max_distance_number; };
-            void set_min_distance_number(number::Number* min_distance_number) { this->min_distance_number = min_distance_number; };
-            void set_no_delay_number(number::Number* delay_number) { this->no_delay_number = delay_number; };
-            void set_status_reporting_freq_number(number::Number* status_reporting_freq_number) { this->status_reporting_freq_number = status_reporting_freq_number; };
-            void set_distance_reporting_freq_number(number::Number* distance_reporting_freq_number) { this->distance_reporting_freq_number = distance_reporting_freq_number; };
+// static const uint16_t SN_READ_CMD = 0x0011;
+// static const uint16_t SN_WRITE_CMD = 0x0010;
+
+#pragma endregion
+
+#pragma region Constants
+static const uint16_t NO_SUB_CMD = 0xffff;
+static const uint16_t FRAME_DATA_LENGTH_SIZE = 2;
+
+static const size_t RX_TX_BUFFER_SIZE = 128;
+static const uint16_t RX_MAX_BYTES_PER_LOOP = 128;
+static const uint8_t TX_SCHEDULE_BUFFER_SIZE = 32;
+static const uint8_t TX_MAX_RESEND = 1;
+static const uint8_t TX_MAX_RESTART = 1;
+static const uint32_t TX_CONFIRMATION_TIMEOUT = 300;  // timeout for waiting for cmd response
+static const uint32_t TX_PAUSE_TIMEOUT = 300;         // pause after receiving response
+#pragma endregion
+
+#pragma region enum
+enum class TxCmdState { EMPTY, SCHEDULED, SEND, SENT, ERROR };
+enum class RxFrameType { UNKNOWN, SHORT_DATA_FRAME, STD_DATA_FRAME, CMD_FRAME, NOK };
+enum class RxEvaluationResult { UNKNOWN, OK, NOK };
+#pragma endregion
+
+#pragma region struct
+struct TxTaskT {
+  uint16_t command;
+  uint16_t sub_command;
+};
+#pragma endregion
+
+class LD2410Srx {
+ public:
+  RxEvaluationResult receive_byte(uint32_t loop_count, uint8_t byte);
+
+  RxFrameType frame_type() const { return this->frame_type_; }
+  uint8_t *frame_data() { return this->rcv_buffer_; }
+  uint8_t frame_size() const { return this->end_pos_; }
+
+  uint8_t *payload_data() { return &this->rcv_buffer_[this->payload_pos_]; }
+  uint8_t payload_size() const { return this->payload_size_; }
+  bool payload_ready() const { return payload_ready_; }
+
+ protected:
+  uint8_t rcv_buffer_[RX_TX_BUFFER_SIZE];
+  uint16_t end_pos_{0};
+
+  uint16_t header_footer_size_{0};
+  uint16_t expected_frame_size_{0};
+  uint16_t size_field_size_{0};
+
+  uint16_t payload_pos_{0};
+  uint16_t payload_size_{0};
+  RxFrameType frame_type_{RxFrameType::UNKNOWN};
+  bool payload_ready_{false};
+
+  std::string msg_{""};
+
+  RxEvaluationResult evaluate_header_();
+  RxEvaluationResult evaluate_size_();
+  RxEvaluationResult evaluate_footer_();
+  void reset_();
+  static int read_int(const uint8_t *buffer, size_t pos, size_t len);
+};
+
+class LD2410Sschedule {
+ public:
+  void append(uint16_t command, uint16_t sub_command = NO_SUB_CMD);
+  TxCmdState check_state();
+  void confirm_sent();
+  void verify_response(uint16_t command_word);
+  void reset();
+  uint16_t get_command();
+  uint16_t get_sub_command();
+
+ protected:
+  TxTaskT commands_[TX_SCHEDULE_BUFFER_SIZE];
+  uint32_t time_started_;
+  uint8_t retry_count_{0};
+  uint8_t restart_count_{0};
+  uint8_t active_{0};
+  uint8_t last_{0};
+  TxCmdState state_ = TxCmdState::EMPTY;
+  bool config_mode_{true};
+
+  void schedule_();
+  void resend_();
+  void restart_();
+  void give_up_();
+  bool check_append_config_end_();
+  bool check_clear_();
+};
+
+class LD2410S : public Component, public uart::UARTDevice {
+#ifdef LD2410S_V2
+#ifdef USE_SENSOR
+  SUB_SENSOR(distance)
+#endif
+#ifdef USE_BINARY_SENSOR
+  SUB_BINARY_SENSOR(presence)
+#endif
+
+#ifdef USE_SENSOR
+  SUB_SENSOR(calibration_progress)
+#endif
+#ifdef USE_BINARY_SENSOR
+  SUB_BINARY_SENSOR(calibration_runing)
+#endif
+#ifdef USE_TEXT_SENSOR
+  SUB_TEXT_SENSOR(fw_version)
+  SUB_TEXT_SENSOR(threshold_trigger)
+  SUB_TEXT_SENSOR(threshold_hold)
+  SUB_TEXT_SENSOR(threshold_snr)
+  SUB_TEXT_SENSOR(energy_values)
 #endif
 #ifdef USE_BUTTON
-            void set_enable_config_button(button::Button* button) { this->enable_config_button = button; };
-            void set_disable_config_button(button::Button* button) { this->disable_config_button = button; };
-            void set_apply_config_button(button::Button* button) { this->apply_config_button = button; };
-            void set_auto_threshold_button(button::Button* button) { this->auto_threshold_button = button; };
+  SUB_BUTTON(calibration)
+  SUB_BUTTON(factory_reset)
+#endif
+#ifdef USE_SWITCH
+  SUB_SWITCH(minimal_output)
 #endif
 #ifdef USE_SELECT
-            void set_response_speed_select(select::Select* selector) { this->response_speed_select = selector; };
+  SUB_SELECT(response_speed)
 #endif
-        private:
-            std::vector<LD2410SListener*> listeners{};
-            Config current_config;
-            bool cmd_active{ false };
 #ifdef USE_NUMBER
-            number::Number* max_distance_number{ nullptr };
-            number::Number* min_distance_number{ nullptr };
-            number::Number* no_delay_number{ nullptr };
-            number::Number* status_reporting_freq_number{ nullptr };
-            number::Number* distance_reporting_freq_number{ nullptr };
+  SUB_NUMBER(max_distance)
+  SUB_NUMBER(min_distance)
+  SUB_NUMBER(no_delay)
+  SUB_NUMBER(status_reporting_freq)
+  SUB_NUMBER(distance_reporting_freq)
+  SUB_NUMBER(threshold_trigger)
+  SUB_NUMBER(threshold_hold)
+  SUB_NUMBER(threshold_snr)
+  SUB_NUMBER(threshold_selected_gate)
 #endif
-#ifdef USE_BUTTON
-            button::Button* enable_config_button{ nullptr };
-            button::Button* disable_config_button{ nullptr };
-            button::Button* apply_config_button{ nullptr };
-            button::Button* auto_threshold_button{ nullptr };
 #endif
-#ifdef USE_SELECT
-            select::Select* response_speed_select{ nullptr };
+
+ public:
+  void setup() override;
+  void loop() override;
+  float get_setup_priority() const override;
+
+#ifdef LD2410S_V2
+  void dump_config() override;
+
+  // button
+  void calibration();
+  void factory_reset();
+  // number
+  void set_delay(float delay);
+  void set_distance_reporting_freq(float distance_reporting_freq);
+  void set_max_distance(float max_distance);
+  void set_min_distance(float min_distance);
+  void set_status_reporting_freq(float status_reporting_freq);
+  void set_threshold_hold(float threshold_hold);
+  void set_threshold_selected_gate(float threshold_selected_gate);
+  void set_threshold_snr(float threshold_snr);
+  void set_threshold_trigger(float threshold_trigger);
+  // select
+  void set_response_speed_select(const std::string &response_speed_select);
+  // switch
+  void set_minimal_output(bool state);
 #endif
-            CmdFrameT prepare_read_config_cmd();
-            CmdFrameT prepare_apply_config_cmd();
-            CmdFrameT prepare_threshold_cmd();
-            CmdFrameT prepare_read_fw_cmd();
-            void send_command(CmdFrameT cmd_frame);
-            PackageType read_line(uint8_t data, uint8_t* buffer, size_t pos);
-            bool process_cmd_ack_package(uint8_t* buffer, int len);
-            void process_data_package(PackageType type, uint8_t* buffer, size_t pos);
-            int read_int(uint8_t* buffer, size_t pos, size_t len) {
-                unsigned int ret = 0;
-                int shift = 0;
-                for (size_t i = 0; i < len; i++) {
-                    ret |= static_cast<unsigned int>(buffer[pos + i]) << shift;
-                    shift += 8;
-                }
-                return ret;
-            };
-            int two_byte_to_int(uint8_t firstbyte, uint8_t secondbyte) { return (secondbyte << 8) + firstbyte; };
-            CmdAckT parse_ack(uint8_t* buffer, size_t length);
-            void process_config_read_ack(uint8_t* data);
-            void process_read_fw_ack(uint8_t* data);
-            void process_short_data_package(uint8_t* data);
-            void process_threshold_package(uint8_t* data);
-        };
+
+ protected:
+  LD2410Sschedule tx_schedule_;
+  LD2410Srx rx_;
+
+  uint8_t tx_frame_[RX_TX_BUFFER_SIZE];
+  uint16_t tx_frame_size_ = 0;
+
+  // settings_;
+  uint32_t thresholds_trigger_[16];
+  uint32_t thresholds_hold_[16];
+  uint32_t thresholds_snr_[16];
+  uint32_t max_dist_{0};
+  uint32_t min_dist_{0};
+  uint32_t delay_{0};
+  uint32_t status_freq_{0};
+  uint32_t dist_freq_{0};
+  uint32_t resp_speed_{0};
+  uint8_t thresholds_selected_gate_{0};
+  bool pause_tx_{false};
+  bool minimal_output_{true};
+
+  uint32_t loop_count_{0};
+  bool init_done_{false};
+
+  uint32_t energy_values_[16];
+  std::string energy_values_str_ = "";
+
+  void send_();
+  void build_cmd_frame_(uint16_t command, uint16_t sub_command = NO_SUB_CMD);
+  void sending_pause_();
+
+  bool receive_();
+  void parse_();
+  void parse_short_data_frame_();
+  void parse_data_frame_();
+  void parse_cmd_frame_();
+
+#ifdef LD2410S_V2
+  void init_();
+  void read_all_();
+  void read_all_thresholds_();
+
+  void parse_data_energy_values_read_(uint8_t *data);
+
+  void parse_ack_config_start_(const uint8_t *data);
+  void parse_ack_config_end_(const uint8_t *data);
+  void parse_ack_config_read_(uint8_t *data);
+  void parse_ack_fw_read_(const uint8_t *data);
+  void parse_ack_minimal_output_(uint8_t *data);
+  void parse_ack_threshold_trigger_read_(uint8_t *data);
+  void parse_ack_threshold_hold_read_(uint8_t *data);
+  void parse_ack_threshold_snr_read_(uint8_t *data);
+
+  void publish_distance_(uint16_t distance, bool force_publish = false);
+  void publish_presence_(bool presence, bool force_publish = false);
+  void publish_calibration_progress_(uint16_t calibration_progress, bool force_publish = false);
+  void publish_calibration_runing_(bool running, bool force_publish = false);
+  void publish_energy_values_(bool force_publish = false);
+  void publish_fw_version_(const std::string &version, bool force_publish = false);
+  void publish_threshold_trigger_(bool force_publish = false);
+  void publish_threshold_hold_(bool force_publish = false);
+  void publish_threshold_snr_(bool force_publish = false);
+
+  static std::string format_int(uint32_t *in, uint8_t len, uint8_t min_w);
+
+#endif
+
+  // append variable sized append_data to data, returns true if not overflow
+  template<typename T>
+  static bool append_seq_data(uint8_t *data, uint16_t &insert_position, const T *append_data,
+                              uint16_t append_array_size = 1, uint16_t actual_size = 0) {
+    size_t data_object_size = (actual_size == 0 ? sizeof(T) : actual_size);
+    auto bytes_to_copy = append_array_size * data_object_size;
+    if (insert_position + bytes_to_copy > RX_TX_BUFFER_SIZE) {
+      return false;
     }
-}
+
+    auto *write_ptr = &data[0] + insert_position;
+    memcpy(write_ptr, append_data, bytes_to_copy);
+
+    insert_position += bytes_to_copy;
+
+    return true;
+  }
+
+  // read variable sized uint from data and move read_position
+  template<typename T>
+  static bool read_seq_data(const uint8_t *data, uint16_t &read_position, T *out_data, uint16_t out_array_size = 1,
+                            uint16_t actual_size = 0) {
+    size_t data_object_size = (actual_size == 0 ? sizeof(T) : actual_size);
+    size_t bytes_to_read = out_array_size * data_object_size;
+
+    if (read_position + bytes_to_read > RX_TX_BUFFER_SIZE) {
+      return false;
+    }
+
+    const uint8_t *read_ptr = &data[0] + read_position;
+
+    memcpy(out_data, read_ptr, bytes_to_read);
+
+    read_position += bytes_to_read;
+    return true;
+  }
+};
+
+}  // namespace ld2410s
+}  // namespace esphome
