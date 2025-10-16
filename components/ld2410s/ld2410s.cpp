@@ -519,7 +519,7 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
       break;
 
     case RxEvaluationResult::NOK:
-      this->reset_();
+      this->payload_ready_ = true;
       break;
     default:
       ESP_LOGE(TAG, "<XX [%d] %s < %s", loop_count, this->msg_.c_str(),
