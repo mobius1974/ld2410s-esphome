@@ -1,388 +1,893 @@
-#include "esphome/core/log.h"
-#include "esphome/core/application.h"
-#include "LD2410S.h"
+#include "ld2410s.h"
 
-namespace esphome
-{
-    namespace ld2410s
-    {
+namespace esphome {
+namespace ld2410s {
 
-        static const char* TAG = "ld2410s";
+#pragma region LD2410S
 
-        void LD2410S::setup() {
-            this->set_config_mode(true);
-            CmdFrameT read_fw_cmd = this->prepare_read_fw_cmd();
-            this->send_command(read_fw_cmd);
-            CmdFrameT read_config_cmd = this->prepare_read_config_cmd();
-            this->send_command(read_config_cmd);
-            this->set_config_mode(false);
-        }
+void LD2410S::setup() {
+  ESP_LOGD(TAG, "setup");
 
-        void LD2410S::loop() {
-            if (!this->cmd_active) {
-                static uint8_t buffer[64];
-                static size_t pos = 0;
-                while (available()) {
-                    PackageType type = this->read_line(read(), buffer, pos++);
-                    if (type == PackageType::SHORT_DATA || type == PackageType::TRESHOLD) {
-                        this->process_data_package(type, buffer, pos);
-                        pos = 0;
-                    }
-                }
-            }
-        }
+#ifdef LD2410S_V2
+  this->status_set_warning();
+  this->publish_distance_(0, true);
+  this->publish_presence_(false, true);
 
-        void LD2410S::set_config_mode(bool enabled) {
-            CmdFrameT start_cfg;
-            start_cfg.header = CMD_FRAME_HEADER;
-            start_cfg.command = enabled ? START_CONFIG_MODE_CMD : END_CONFIG_MODE_CMD;
-            start_cfg.data_length = 0;
-            if (enabled)
-            {
-                memcpy(&start_cfg.data[0], &START_CONFIG_MODE_VALUE, sizeof(START_CONFIG_MODE_VALUE));
-                start_cfg.data_length += sizeof(START_CONFIG_MODE_VALUE);
-            }
+  this->publish_calibration_progress_(0, true);
+  this->publish_calibration_runing_(false, true);
 
-            start_cfg.footer = CMD_FRAME_FOOTER;
-            this->send_command(start_cfg);
-        }
+  this->set_threshold_selected_gate(0);
 
-        void LD2410S::apply_config() {
-            this->status_set_warning("Sending command to sensor");
-            this->set_config_mode(true);
-            CmdFrameT apply_config_cmd = this->prepare_apply_config_cmd();
-            this->send_command(apply_config_cmd);
-            this->set_config_mode(false);
-            this->status_clear_warning();
-        }
-
-        void LD2410S::start_auto_threshold_update() {
-            this->status_set_warning("Sending command to sensor");
-            this->set_config_mode(true);
-            CmdFrameT threshold_update_cmd = this->prepare_threshold_cmd();
-            this->send_command(threshold_update_cmd);
-            this->set_config_mode(false);
-            this->status_clear_warning();
-        }
-
-        CmdFrameT LD2410S::prepare_read_config_cmd() {
-            CmdFrameT cmd_frame;
-            cmd_frame.header = CMD_FRAME_HEADER;
-            cmd_frame.command = READ_PARAMS_CMD;
-            cmd_frame.data_length = 0;
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_MAX_DETECTION_VALUE, sizeof(CFG_MAX_DETECTION_VALUE));
-            cmd_frame.data_length += sizeof(CFG_MAX_DETECTION_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_MIN_DETECTION_VALUE, sizeof(CFG_MIN_DETECTION_VALUE));
-            cmd_frame.data_length += sizeof(CFG_MIN_DETECTION_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_NO_DELAY_VALUE, sizeof(CFG_NO_DELAY_VALUE));
-            cmd_frame.data_length += sizeof(CFG_NO_DELAY_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_STATUS_FREQ_VALUE, sizeof(CFG_STATUS_FREQ_VALUE));
-            cmd_frame.data_length += sizeof(CFG_STATUS_FREQ_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_DISTANCE_FREQ_VALUE, sizeof(CFG_DISTANCE_FREQ_VALUE));
-            cmd_frame.data_length += sizeof(CFG_DISTANCE_FREQ_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_RESPONSE_SPEED_VALUE, sizeof(CFG_RESPONSE_SPEED_VALUE));
-            cmd_frame.data_length += sizeof(CFG_RESPONSE_SPEED_VALUE);
-
-            cmd_frame.footer = CMD_FRAME_FOOTER;
-            return cmd_frame;
-        }
-
-        CmdFrameT LD2410S::prepare_apply_config_cmd() {
-            CmdFrameT cmd_frame;
-            cmd_frame.header = CMD_FRAME_HEADER;
-            cmd_frame.command = WRITE_PARAMS_CMD;
-            cmd_frame.data_length = 0;
-
-            Config to_save = this->new_config;
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_MAX_DETECTION_VALUE, sizeof(CFG_MAX_DETECTION_VALUE));
-            cmd_frame.data_length += sizeof(CFG_MAX_DETECTION_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.max_dist, sizeof(to_save.max_dist));
-            cmd_frame.data_length += sizeof(to_save.max_dist);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_MIN_DETECTION_VALUE, sizeof(CFG_MIN_DETECTION_VALUE));
-            cmd_frame.data_length += sizeof(CFG_MIN_DETECTION_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.min_dist, sizeof(to_save.min_dist));
-            cmd_frame.data_length += sizeof(to_save.min_dist);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_NO_DELAY_VALUE, sizeof(CFG_NO_DELAY_VALUE));
-            cmd_frame.data_length += sizeof(CFG_NO_DELAY_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.delay, sizeof(to_save.delay));
-            cmd_frame.data_length += sizeof(to_save.delay);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_STATUS_FREQ_VALUE, sizeof(CFG_STATUS_FREQ_VALUE));
-            cmd_frame.data_length += sizeof(CFG_STATUS_FREQ_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.status_freq, sizeof(to_save.status_freq));
-            cmd_frame.data_length += sizeof(to_save.status_freq);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_DISTANCE_FREQ_VALUE, sizeof(CFG_DISTANCE_FREQ_VALUE));
-            cmd_frame.data_length += sizeof(CFG_DISTANCE_FREQ_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.dist_freq, sizeof(to_save.dist_freq));
-            cmd_frame.data_length += sizeof(to_save.dist_freq);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &CFG_RESPONSE_SPEED_VALUE, sizeof(CFG_RESPONSE_SPEED_VALUE));
-            cmd_frame.data_length += sizeof(CFG_RESPONSE_SPEED_VALUE);
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &to_save.resp_speed, sizeof(to_save.resp_speed));
-            cmd_frame.data_length += sizeof(to_save.resp_speed);
-
-            cmd_frame.footer = CMD_FRAME_FOOTER;
-            return cmd_frame;
-        }
-
-        CmdFrameT LD2410S::prepare_threshold_cmd() {
-            CmdFrameT cmd_frame;
-            cmd_frame.header = CMD_FRAME_HEADER;
-            cmd_frame.command = AUTO_UPDATE_THRESHOLD_CMD;
-            cmd_frame.data_length = 0;
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &THRESHOLD_TRIGGER_VALUE, sizeof(THRESHOLD_TRIGGER_VALUE));
-            cmd_frame.data_length += sizeof(THRESHOLD_TRIGGER_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &THRESHOLD_RETENTION_VALUE, sizeof(THRESHOLD_RETENTION_VALUE));
-            cmd_frame.data_length += sizeof(THRESHOLD_RETENTION_VALUE);
-
-            memcpy(&cmd_frame.data[cmd_frame.data_length], &THRESHOLD_TIME_VALUE, sizeof(THRESHOLD_TIME_VALUE));
-            cmd_frame.data_length += sizeof(THRESHOLD_TIME_VALUE);
-
-            cmd_frame.footer = CMD_FRAME_FOOTER;
-            return cmd_frame;
-        }
-
-        CmdFrameT LD2410S::prepare_read_fw_cmd() {
-            CmdFrameT cmd_frame;
-            cmd_frame.header = CMD_FRAME_HEADER;
-            cmd_frame.command = READ_FW_CMD;
-            cmd_frame.data_length = 0;
-            cmd_frame.footer = CMD_FRAME_FOOTER;
-            return cmd_frame;
-        }
-
-        void LD2410S::send_command(CmdFrameT frame)
-        {
-            this->cmd_active = true;
-            uint32_t start_millis = millis();
-            uint8_t retry = 3;
-            uint8_t cmd_buffer[64];
-
-            while (retry)
-            {
-                frame.length = 0;
-                uint16_t frame_data_bytes = frame.data_length + 2;
-                // HEADER
-                memcpy(&cmd_buffer[frame.length], &frame.header, sizeof(frame.header));
-                frame.length += sizeof(frame.header);
-                // SIZE
-                memcpy(&cmd_buffer[frame.length], &frame_data_bytes, sizeof(frame.data_length));
-                frame.length += sizeof(frame.data_length);
-                // COMMAND
-                memcpy(&cmd_buffer[frame.length], &frame.command, sizeof(frame.command));
-                frame.length += sizeof(frame.command);
-                // DATA
-                for (uint16_t index = 0; index < frame.data_length; index++)
-                {
-                    memcpy(&cmd_buffer[frame.length], &frame.data[index], sizeof(frame.data[index]));
-                    frame.length += sizeof(frame.data[index]);
-                }
-                // FOOTER
-                memcpy(cmd_buffer + frame.length, &frame.footer, sizeof(frame.footer));
-                frame.length += sizeof(frame.footer);
-                // WRITE
-                for (uint16_t index = 0; index < frame.length; index++)
-                {
-                    this->write_byte(cmd_buffer[index]);
-                }
-
-                this->flush();
-
-                bool reply = false;
-
-                while (!reply) {
-                    App.feed_wdt();
-                    uint8_t ack_buffer[64];
-                    size_t last_pos = 0;
-                    while (available()) {
-                        PackageType type = this->read_line(read(), ack_buffer, last_pos++);
-                        if (type == PackageType::ACK) {
-                            reply = this->process_cmd_ack_package(ack_buffer, last_pos + 1);
-                            last_pos = 0;
-                        }
-                    }
-                    delay_microseconds_safe(1450);
-                    if ((millis() - start_millis) > 1000)
-                    {
-                        start_millis = millis();
-                        retry--;
-                        break;
-                    }
-                }
-                if (reply)
-                {
-                    retry = 0;
-                }
-            }
-            this->cmd_active = false;
-        }
-
-        PackageType LD2410S::read_line(uint8_t data, uint8_t* buffer, size_t pos) {
-            buffer[pos] = data;
-
-            if (pos > 4) {
-                if (memcmp(&buffer[pos - 3], &CMD_FRAME_FOOTER, sizeof(CMD_FRAME_FOOTER)) == 0) {
-                    return PackageType::ACK;
-                }
-                else if (buffer[pos] == DATA_FRAME_FOOTER && buffer[pos - 4] == DATA_FRAME_HEADER) {
-                    return PackageType::SHORT_DATA;
-                }
-                else if (memcmp(&buffer[pos - 3], &THRESHOLD_FOOTER, sizeof(THRESHOLD_FOOTER)) == 0) {
-                    return PackageType::TRESHOLD;
-                }
-            }
-            return PackageType::UNKNOWN;
-        }
-
-        void LD2410S::process_config_read_ack(uint8_t* data) {
-            int max_dist = this->read_int(data, 0, 4);
-            int min_dist = this->read_int(data, 4, 4);
-            int delay = this->read_int(data, 8, 4);
-            int status_resp_freq = this->read_int(data, 12, 4);
-            int dist_resp_freq = this->read_int(data, 16, 4);
-            int resp_speed = this->read_int(data, 20, 4);
-#ifdef USE_NUMBER
-            this->max_distance_number->publish_state(max_dist);
-            this->min_distance_number->publish_state(min_dist);
-            this->no_delay_number->publish_state(delay);
-            this->status_reporting_freq_number->publish_state(status_resp_freq / 10);
-            this->distance_reporting_freq_number->publish_state(dist_resp_freq / 10);
+  this->init_();
 #endif
-#ifdef USE_SELECT
-            this->response_speed_select->publish_state(resp_speed == 5 ? RESPONSE_SPEED_NORMAL : RESPONSE_SPEED_FAST);
-#endif
-            memcpy(&this->new_config, &this->current_config, sizeof(this->current_config));
-            ESP_LOGD(TAG, "Read config replay: max_dist=%d, min_dist=%d, delay=%d, status_resp_freq=%d, dist_resp_freq=%d, resp_speed=%d", max_dist, min_dist, delay, status_resp_freq, dist_resp_freq, resp_speed);
-        }
-
-        void LD2410S::process_read_fw_ack(uint8_t* data) {
-            int major_v = static_cast<int>(data[0]);
-            int minor_v = static_cast<int>(data[1]);
-            int patch_v = static_cast<int>(data[2]);
-            std::string version = "v" + std::to_string(major_v) + "." + std::to_string(minor_v) + "." + std::to_string(patch_v);
-            for (auto& listener : this->listeners) {
-                listener->on_fw_version(version);
-            }
-            ESP_LOGD(TAG, "Read firmware replay: %s", version.c_str());
-        }
-
-        bool LD2410S::process_cmd_ack_package(uint8_t* buffer, int len) {
-            CmdAckT ack = this->parse_ack(buffer, len);
-            int command_word = ack.command;
-            bool result = ack.result;
-            if (!result) {
-                ESP_LOGW(TAG, "Command %x failed", command_word);
-                return false;
-            }
-            else {
-                ESP_LOGI(TAG, "Command %x success", command_word);
-            }
-
-            uint8_t* data = ack.data;
-
-            switch (command_word) {
-            case START_CONFIG_MODE_REPLAY:
-                ESP_LOGD(TAG, "Config mode enabled");
-                break;
-            case END_CONFIG_MODE_REPLAY:
-                ESP_LOGD(TAG, "Config mode disabled");
-                break;
-            case READ_PARAMS_REPLAY:
-                this->process_config_read_ack(data);
-                break;
-            case WRITE_PARAMS_REPLAY:
-                ESP_LOGD(TAG, "Write config replay processed");
-                break;
-            case READ_FW_REPLAY:
-                this->process_read_fw_ack(data);
-                break;
-            default:
-                ESP_LOGD(TAG, "Unknown replay: %x", command_word);
-                break;
-            }
-
-            return true;
-        }
-
-        void LD2410S::process_short_data_package(uint8_t* data) {
-            const bool presenceState = data[0] > 1;
-            int distance = this->two_byte_to_int(data[1], data[2]);
-            for (auto& listener : this->listeners) {
-                listener->on_presence(presenceState);
-                listener->on_distance(distance);
-            }
-        }
-
-        void LD2410S::process_threshold_package(uint8_t* data) {
-            int progress = this->two_byte_to_int(data[3], data[4]);
-            for (auto& listener : this->listeners) {
-                if (progress == 100) {
-                    listener->on_threshold_progress(0);
-                    listener->on_threshold_update(false);
-                }
-                else {
-                    listener->on_threshold_progress(progress);
-                    listener->on_threshold_update(true);
-                }
-            }
-        }
-
-        void LD2410S::process_data_package(PackageType type, uint8_t* buffer, size_t pos) {
-            switch (type) {
-            case PackageType::SHORT_DATA:
-                this->process_short_data_package(&buffer[1]);
-                break;
-            case PackageType::TRESHOLD:
-                this->process_threshold_package(&buffer[4]);
-                break;
-            default:
-                ESP_LOGD(TAG, "Unexpected package type");
-                break;
-            }
-        }
-
-        float LD2410S::get_setup_priority() const
-        {
-            return setup_priority::HARDWARE;
-        }
-
-        CmdAckT LD2410S::parse_ack(uint8_t* buffer, size_t length) {
-            CmdAckT result;
-            size_t start = -1;
-            for (size_t i = 0; i < length; i++) {
-                if (memcmp(&buffer[i], &CMD_FRAME_HEADER, sizeof(CMD_FRAME_HEADER)) == 0) {
-                    start = i;
-                    break;
-                }
-            }
-            if (start == -1) {
-                ESP_LOGE(TAG, "Can't find cmd header");
-                result.result = false;
-                return result;
-            }
-            int data_length = this->two_byte_to_int(buffer[start + 4], buffer[start + 5]);
-            result.length = data_length;
-            int command_word = this->two_byte_to_int(buffer[start + 6], buffer[start + 7]);
-            result.command = command_word;
-            bool ack = buffer[start + 8] == 0x00 && buffer[start + 9] == 0x00;
-            result.result = ack;
-            // memcpy(&result.data, &buffer[start + 10], sizeof(uint8_t) * result.length);
-            for (size_t idx = 0; idx < result.length; idx++) {
-                memcpy(&result.data[idx], &buffer[idx + 10], sizeof(buffer[idx + 10]));
-            }
-            return result;
-        }
-    }
 }
+void LD2410S::loop() {
+  if (!this->init_done_) {
+    this->status_set_warning();
+  } else {
+    this->status_clear_warning();
+  }
+  if (!this->receive_()) {
+    if (!this->pause_tx_) {
+      this->send_();
+    }
+  }
+  this->loop_count_++;
+}
+float LD2410S::get_setup_priority() const { return setup_priority::HARDWARE; }
+
+// prepares scheduled frames for sending
+// executes actual data sending
+void LD2410S::send_() {
+  switch (this->tx_schedule_.check_state()) {
+    case TxCmdState::SCHEDULED:
+      this->build_cmd_frame_(this->tx_schedule_.get_command(), this->tx_schedule_.get_sub_command());
+
+    case TxCmdState::SEND:
+      this->status_set_warning();
+      this->write_array(this->tx_frame_, sizeof(this->tx_frame_));
+      this->flush();
+
+      ESP_LOGI(TAG, ">   [%d] %04x cmd > %s", this->loop_count_, this->tx_schedule_.get_command(),
+               format_hex_pretty(this->tx_frame_, this->tx_frame_size_, ' ').c_str());
+
+      this->init_done_ = false;
+      this->tx_schedule_.confirm_sent();
+      break;
+
+    case TxCmdState::ERROR:
+      this->status_set_warning();
+      ESP_LOGW(TAG, ">XX [%d] Scheduling command send failed!!!, re-initializing...", this->loop_count_);
+      this->tx_schedule_.reset();
+#ifdef LD2410S_V2
+      this->init_();
+#endif
+      static const uint8_t CFG_END[] = {0xFD, 0xFC, 0xFB, 0xFA, 0x02, 0x00, 0xFE, 0x00, 0x04, 0x03, 0x02, 0x01};
+      this->write_array(CFG_END, sizeof(CFG_END));
+      this->flush();
+      break;
+
+    case TxCmdState::EMPTY:
+      if (!this->init_done_) {
+        ESP_LOGI(TAG, "+++ [%d] Setup done", this->loop_count_);
+        this->init_done_ = true;
+      }
+      break;
+
+    case TxCmdState::SENT:
+    default:
+      break;
+  }
+}
+// builds CMD_FRAME
+void LD2410S::build_cmd_frame_(uint16_t command, uint16_t sub_command) {
+  ESP_LOGD(TAG, ":>> [%d] %04x Prepare frame ", this->loop_count_, command);
+
+  this->tx_frame_size_ = 0;
+
+  // Header
+  append_seq_data(this->tx_frame_, this->tx_frame_size_, &CMD_FRAME_HEADER);
+
+  // Frame size placeholder
+  uint16_t size_start = this->tx_frame_size_;
+  this->tx_frame_size_ += sizeof(size_start);
+
+  // Data start
+  uint16_t data_start = this->tx_frame_size_;
+
+  // Command
+  append_seq_data(this->tx_frame_, this->tx_frame_size_, &command, 1);
+
+  // Parameters
+  switch (command) {
+    case OUTPUT_MODE_SWITCH_CMD: {
+      if (this->minimal_output_) {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, OUTPUT_MODE_VALUE_MIN, 6);
+      } else {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, OUTPUT_MODE_VALUE_STD, 6);
+      }
+    } break;
+
+    case CONFIG_MODE_START_CMD:
+      append_seq_data(this->tx_frame_, this->tx_frame_size_, &CONFIG_MODE_START_VALUE);
+      break;
+
+    case CONFIG_MODE_END_CMD:
+      break;
+
+    case CFG_PARAMS_READ_CMD:
+
+      switch (sub_command) {
+        case CFG_MAX_DETECTION_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MAX_DETECTION_VALUE);
+          break;
+
+        case CFG_MIN_DETECTION_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MIN_DETECTION_VALUE);
+          break;
+
+        case CFG_NO_DELAY_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_NO_DELAY_VALUE);
+          break;
+
+        case CFG_STATUS_FREQ_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_STATUS_FREQ_VALUE);
+          break;
+
+        case CFG_DISTANCE_FREQ_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_DISTANCE_FREQ_VALUE);
+          break;
+
+        case CFG_RESPONSE_SPEED_VALUE:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_RESPONSE_SPEED_VALUE);
+          break;
+
+        default:
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MAX_DETECTION_VALUE);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MIN_DETECTION_VALUE);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_NO_DELAY_VALUE);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_STATUS_FREQ_VALUE);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_DISTANCE_FREQ_VALUE);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_RESPONSE_SPEED_VALUE);
+          break;
+      }
+
+      break;
+
+    case CFG_FW_READ_CMD:
+      break;
+
+    case CFG_PARAMS_WRITE_CMD:
+      if (this->resp_speed_ == 0) {
+        ESP_LOGD(TAG, "CFG_PARAMS_WRITE_CMD Error, bad new_config");
+        return;
+      } else {
+        switch (sub_command) {
+          case CFG_MAX_DETECTION_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MAX_DETECTION_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->max_dist_);
+            break;
+
+          case CFG_MIN_DETECTION_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MIN_DETECTION_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->min_dist_);
+            break;
+
+          case CFG_NO_DELAY_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_NO_DELAY_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->delay_);
+            break;
+
+          case CFG_STATUS_FREQ_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_STATUS_FREQ_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->status_freq_);
+            break;
+
+          case CFG_DISTANCE_FREQ_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_DISTANCE_FREQ_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->dist_freq_);
+            break;
+
+          case CFG_RESPONSE_SPEED_VALUE:
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_RESPONSE_SPEED_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->resp_speed_);
+            break;
+
+          default:
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MAX_DETECTION_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->max_dist_);
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_MIN_DETECTION_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->min_dist_);
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_NO_DELAY_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->delay_);
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_STATUS_FREQ_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->status_freq_);
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_DISTANCE_FREQ_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->dist_freq_);
+
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &CFG_RESPONSE_SPEED_VALUE);
+            append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->resp_speed_);
+
+            break;
+        }
+        break;
+      }
+
+    case CALIBRATION_CMD:
+      append_seq_data(this->tx_frame_, this->tx_frame_size_, &CALIBRATION_TRIGGER_VALUE);
+      append_seq_data(this->tx_frame_, this->tx_frame_size_, &CALIBRATION_RETENTION_VALUE);
+      append_seq_data(this->tx_frame_, this->tx_frame_size_, &CALIBRATION_TIME_VALUE);
+      break;
+
+    case CFG_GATE_THRESHOLD_TRIGGER_READ_CMD:
+    case CFG_GATE_THRESHOLD_HOLD_READ_CMD:
+    case CFG_GATE_THRESHOLD_SNR_READ_CMD:
+      if (sub_command != NO_SUB_CMD) {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &sub_command);
+      } else {
+        for (uint16_t i = 0; i < 16; i++) {
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &i);
+        }
+      }
+      break;
+
+    case CFG_GATE_THRESHOLD_TRIGGER_WRITE_CMD:
+      if (sub_command != NO_SUB_CMD) {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &sub_command);
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_trigger_[sub_command]);
+      } else {
+        for (uint16_t i = 0; i < 16; i++) {
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &i, 1);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_trigger_[i]);
+        }
+      }
+      break;
+
+    case CFG_GATE_THRESHOLD_HOLD_WRITE_CMD:
+      if (sub_command != NO_SUB_CMD) {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &sub_command);
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_hold_[sub_command]);
+      } else {
+        for (uint16_t i = 0; i < 16; i++) {
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &i);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_hold_[i]);
+        }
+      }
+      break;
+
+    case CFG_GATE_THRESHOLD_SNR_WRITE_CMD:
+      if (sub_command != NO_SUB_CMD) {
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &sub_command);
+        append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_snr_[sub_command]);
+      } else {
+        for (uint16_t i = 0; i < 16; i++) {
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &i);
+          append_seq_data(this->tx_frame_, this->tx_frame_size_, &this->thresholds_snr_[i]);
+        }
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  // Frame size
+  uint16_t data_size = this->tx_frame_size_ - data_start;
+  append_seq_data(this->tx_frame_, size_start, &data_size);
+
+  // Footer
+  append_seq_data(this->tx_frame_, this->tx_frame_size_, &CMD_FRAME_FOOTER);
+}
+
+void LD2410S::sending_pause_() {
+  this->pause_tx_ = true;
+  this->set_timeout("Pausing Sending", TX_PAUSE_TIMEOUT, [this]() {
+    // ESP_LOGI("ld2410s", "Proceeding after tx pause of %d ms", TX_PAUSE_TIMEOUT);
+    this->pause_tx_ = false;
+  });
+}
+
+// receives frames and starts processing
+bool LD2410S::receive_() {
+  uint8_t rx;
+  int rx_bytes_count = 0;
+
+  while (this->available() && rx_bytes_count < RX_MAX_BYTES_PER_LOOP) {
+    if (!this->read_byte(&rx))
+      break;
+    rx_bytes_count++;
+
+    if (this->rx_.receive_byte(this->loop_count_, rx) == RxEvaluationResult::OK) {
+      this->parse_();
+    }
+  }
+  return rx_bytes_count > 0;
+}
+// starts received frame decoding, and handling received data
+void LD2410S::parse_() {
+  switch (this->rx_.frame_type()) {
+    case RxFrameType::SHORT_DATA_FRAME:
+      this->parse_short_data_frame_();
+      break;
+
+    case RxFrameType::STD_DATA_FRAME:
+      this->parse_data_frame_();
+      break;
+
+    case RxFrameType::CMD_FRAME:
+      this->sending_pause_();
+      this->parse_cmd_frame_();
+      break;
+
+    default:
+      ESP_LOGE(TAG, "Received Unknown package type!!!");
+      break;
+  }
+}
+void LD2410S::parse_short_data_frame_() {
+  ESP_LOGI(TAG, "<   [%d] short data < %s", this->loop_count_,
+           format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+
+  const bool presence_state = this->rx_.payload_data()[0] > 1;
+  uint16_t distance = encode_uint16(this->rx_.payload_data()[2], this->rx_.payload_data()[1]);
+
+  if (!presence_state)
+    distance = 0;
+
+#ifdef LD2410S_V2
+  this->publish_distance_(distance);
+  this->publish_presence_(presence_state);
+#endif
+}
+void LD2410S::parse_data_frame_() {
+  switch (this->rx_.payload_data()[0]) {
+    case 0x01:  // standard data
+    {
+      ESP_LOGI(TAG, "<   [%d] std data < %s", this->loop_count_,
+               format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+
+      const bool presence_state = this->rx_.payload_data()[1] > 1;
+
+      uint16_t distance = encode_uint16(this->rx_.payload_data()[3], this->rx_.payload_data()[2]);
+      if (!presence_state)
+        distance = 0;
+
+#ifdef LD2410S_V2
+      this->publish_distance_(distance);
+      this->publish_presence_(presence_state);
+
+      this->parse_data_energy_values_read_(&this->rx_.payload_data()[6]);
+#endif
+
+      break;
+    }
+
+    case 0x03:  // calibration progress
+    {
+#ifdef LD2410S_V2
+      ESP_LOGI(TAG, "<   [%d] std calibration < %s", this->loop_count_,
+               format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+
+      uint16_t progress = encode_uint16(this->rx_.payload_data()[2], this->rx_.payload_data()[1]);
+
+      this->sending_pause_();
+
+      if (progress == 100) {
+        this->publish_calibration_runing_(false);
+        this->read_all_thresholds_();
+      } else {
+        this->publish_calibration_runing_(true);
+      }
+      this->publish_calibration_progress_(progress);
+#endif
+
+      break;
+    }
+
+    default:
+      ESP_LOGE(TAG, "<XX [%d] std, Unknow std frame type < %s", this->loop_count_,
+               format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+
+      break;
+  }
+}
+void LD2410S::parse_cmd_frame_() {
+  uint8_t *data_start = this->rx_.payload_data();
+  uint16_t read_position = 0;
+  uint16_t command_word = 0;
+  uint16_t ack = 0;
+
+  read_seq_data(data_start, read_position, &command_word);
+  read_seq_data(data_start, read_position, &ack);
+
+  if (ack == 0x0000) {
+    ESP_LOGI(TAG, "<   [%d] %04x cmd < %s", this->loop_count_, command_word,
+             format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+  } else {
+    ESP_LOGE(TAG, "<XX [%d] %04x cmd Failed ack:%04x < %s", this->loop_count_, command_word, ack,
+             format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
+  }
+
+  this->tx_schedule_.verify_response(command_word);
+
+  uint8_t *data = &data_start[read_position];
+
+  switch (command_word) {
+    // Process acknowledgements
+
+#ifdef LD2410S_V2
+
+    case CONFIG_MODE_START_CMD | CMD_CONFIRMATION:
+      this->parse_ack_config_start_(data);
+      break;
+
+    case CONFIG_MODE_END_CMD | CMD_CONFIRMATION:
+      this->parse_ack_config_end_(data);
+      break;
+
+    case CALIBRATION_CMD | CMD_CONFIRMATION:
+      ESP_LOGI(TAG, "Calibration started");
+      break;
+
+      // Write command acknowledgements
+
+    case CFG_PARAMS_WRITE_CMD | CMD_CONFIRMATION:
+      ESP_LOGI(TAG, "Config written");
+      break;
+
+    case OUTPUT_MODE_SWITCH_CMD | CMD_CONFIRMATION:
+      this->parse_ack_minimal_output_(data);
+      break;
+
+    case CFG_GATE_THRESHOLD_TRIGGER_WRITE_CMD | CMD_CONFIRMATION:
+      ESP_LOGI(TAG, "Trigger Threshold written");
+      break;
+
+    case CFG_GATE_THRESHOLD_HOLD_WRITE_CMD | CMD_CONFIRMATION:
+      ESP_LOGI(TAG, "Trigger Hold written");
+      break;
+
+    case CFG_GATE_THRESHOLD_SNR_WRITE_CMD | CMD_CONFIRMATION:
+      ESP_LOGI(TAG, "Trigger SNR written");
+      break;
+
+      // Read command acknowledgements
+
+    case CFG_PARAMS_READ_CMD | CMD_CONFIRMATION:
+      this->parse_ack_config_read_(data);
+      break;
+
+    case CFG_FW_READ_CMD | CMD_CONFIRMATION:
+      this->parse_ack_fw_read_(data);
+      break;
+
+    case CFG_GATE_THRESHOLD_TRIGGER_READ_CMD | CMD_CONFIRMATION:
+      this->parse_ack_threshold_trigger_read_(data);
+      break;
+
+    case CFG_GATE_THRESHOLD_HOLD_READ_CMD | CMD_CONFIRMATION:
+      this->parse_ack_threshold_hold_read_(data);
+      break;
+
+    case CFG_GATE_THRESHOLD_SNR_READ_CMD | CMD_CONFIRMATION:
+      this->parse_ack_threshold_snr_read_(data);
+      break;
+#endif
+
+    default:
+      ESP_LOGE(TAG, "< Unknown: %4x", command_word);
+      break;
+  }
+}
+
+#pragma endregion
+
+#pragma region LD2410Srx
+
+// appends one byte to rx buffer, and checks if that makes complete frame
+RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
+  if (this->payload_ready_) {
+    this->reset_();
+  }
+
+  this->rcv_buffer_[this->end_pos_] = byte;
+
+  RxEvaluationResult result = this->evaluate_header_();
+  if (result == RxEvaluationResult::OK) {
+    result = this->evaluate_size_();
+    if (result == RxEvaluationResult::OK) {
+      result = this->evaluate_footer_();
+    }
+  }
+
+  switch (result) {
+    case RxEvaluationResult::OK:
+      this->payload_ready_ = true;
+      break;
+
+    case RxEvaluationResult::UNKNOWN:
+      this->end_pos_++;
+      if (this->end_pos_ > RX_TX_BUFFER_SIZE) {
+        ESP_LOGE(TAG, "XX< [%d] Received data buffer overflow, resetting", loop_count);
+        this->reset_();
+      }
+      break;
+
+    case RxEvaluationResult::NOK:
+    default:
+      ESP_LOGE(TAG, "<XX [%d] %s < %s", loop_count, this->msg_.c_str(),
+               format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
+      this->reset_();
+      result = RxEvaluationResult::UNKNOWN;
+      break;
+  }
+
+  return result;
+}
+// checks if current rx buffer contains header
+RxEvaluationResult LD2410Srx::evaluate_header_() {
+  switch (this->frame_type_) {
+    case RxFrameType::CMD_FRAME:
+    case RxFrameType::STD_DATA_FRAME:
+    case RxFrameType::SHORT_DATA_FRAME:
+      return RxEvaluationResult::OK;  // already determined frame type
+
+    case RxFrameType::NOK:
+      return RxEvaluationResult::NOK;  // already determined bad header
+
+    case RxFrameType::UNKNOWN:
+    default:
+      break;  // need to determine frame type
+  }
+
+  if (this->end_pos_ + 1 == sizeof(SHORT_DATA_FRAME_HEADER) &&
+      memcmp(&this->rcv_buffer_[0], &SHORT_DATA_FRAME_HEADER, sizeof(SHORT_DATA_FRAME_HEADER)) == 0) {
+    this->frame_type_ = RxFrameType::SHORT_DATA_FRAME;
+    this->header_footer_size_ = sizeof(SHORT_DATA_FRAME_HEADER);
+    return RxEvaluationResult::OK;
+  }
+
+  if (this->end_pos_ + 1 == sizeof(STD_DATA_FRAME_HEADER) &&
+      memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, sizeof(STD_DATA_FRAME_HEADER)) == 0) {
+    this->frame_type_ = RxFrameType::STD_DATA_FRAME;
+    this->header_footer_size_ = sizeof(STD_DATA_FRAME_HEADER);
+    return RxEvaluationResult::OK;
+  }
+
+  if (this->end_pos_ + 1 == sizeof(CMD_FRAME_HEADER) &&
+      memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, sizeof(CMD_FRAME_HEADER)) == 0) {
+    this->frame_type_ = RxFrameType::CMD_FRAME;
+    this->header_footer_size_ = sizeof(CMD_FRAME_HEADER);
+    return RxEvaluationResult::OK;
+  }
+
+  if (this->end_pos_ + 1 < sizeof(STD_DATA_FRAME_HEADER) &&
+      memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, this->end_pos_ + 1) == 0) {
+    this->frame_type_ =
+        RxFrameType::UNKNOWN;  // not enough data yet to determine frame type, but it fits STD frame header
+    this->header_footer_size_ = 0;
+    return RxEvaluationResult::UNKNOWN;
+  }
+
+  if (this->end_pos_ + 1 < sizeof(CMD_FRAME_HEADER) &&
+      memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, this->end_pos_ + 1) == 0) {
+    this->frame_type_ =
+        RxFrameType::UNKNOWN;  // not enough data yet to determine frame type, but it fits CMD frame header
+    this->header_footer_size_ = 0;
+    return RxEvaluationResult::UNKNOWN;
+  }
+
+  this->msg_ = "Unkown header";
+  this->frame_type_ = RxFrameType::NOK;  // bad header
+  return RxEvaluationResult::NOK;
+}
+// checks if current rx buffer has proper size for decoded header
+RxEvaluationResult LD2410Srx::evaluate_size_() {
+  switch (this->frame_type_) {
+    case RxFrameType::SHORT_DATA_FRAME:
+      if (this->expected_frame_size_ == 0) {
+        this->size_field_size_ = 0;
+        this->payload_size_ = 3;
+        this->payload_pos_ = this->header_footer_size_;
+        this->expected_frame_size_ = 2 * this->header_footer_size_ + 3;
+      }
+      break;
+
+    case RxFrameType::STD_DATA_FRAME:
+    case RxFrameType::CMD_FRAME:
+      if (this->expected_frame_size_ == 0) {
+        this->size_field_size_ = FRAME_DATA_LENGTH_SIZE;
+        if (this->end_pos_ >= this->header_footer_size_ + this->size_field_size_) {
+          this->payload_size_ = read_int(this->rcv_buffer_, this->header_footer_size_, 2);
+          this->payload_pos_ = this->header_footer_size_ + this->size_field_size_;
+          this->expected_frame_size_ = 2 * this->header_footer_size_ + this->size_field_size_ + this->payload_size_;
+        }
+      }
+      break;
+
+    case RxFrameType::UNKNOWN:
+      return RxEvaluationResult::UNKNOWN;  // not enough data yet to determine size
+    case RxFrameType::NOK:                 // already determined bad header
+    default:                               // unknown header type
+      return RxEvaluationResult::NOK;
+  }
+
+  if (this->expected_frame_size_ == 0 || this->end_pos_ + 1 < this->expected_frame_size_) {
+    return RxEvaluationResult::UNKNOWN;  // not enough data yet to determine size
+
+  } else if (this->end_pos_ + 1 > this->expected_frame_size_) {
+    this->msg_ = "rx passed the expected frame, expected:" + to_string(this->expected_frame_size_);
+    return RxEvaluationResult::NOK;  // passed the end of short data frame
+
+  } else {
+    return RxEvaluationResult::OK;  // correct size
+  }
+}
+// checks if current rx buffer containts proper footer for decoded header
+RxEvaluationResult LD2410Srx::evaluate_footer_() {
+  switch (this->frame_type_) {
+    case RxFrameType::SHORT_DATA_FRAME:  // footer matches expected for short data frame
+      if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &SHORT_DATA_FRAME_FOOTER,
+                 sizeof(SHORT_DATA_FRAME_FOOTER)) == 0) {
+        return RxEvaluationResult::OK;
+      }
+      break;
+
+    case RxFrameType::STD_DATA_FRAME:  // footer matches expected for standard data frame
+      if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &STD_DATA_FRAME_FOOTER,
+                 sizeof(STD_DATA_FRAME_FOOTER)) == 0) {
+        return RxEvaluationResult::OK;
+      }
+      break;
+
+    case RxFrameType::CMD_FRAME:  // footer matches expected for command frame
+      if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &CMD_FRAME_FOOTER,
+                 sizeof(CMD_FRAME_FOOTER)) == 0) {
+        return RxEvaluationResult::OK;
+      }
+      break;
+
+    case RxFrameType::UNKNOWN:  // not enough data yet to determine size
+      return RxEvaluationResult::UNKNOWN;
+    case RxFrameType::NOK:  // already known bad data frame
+    default:                // unknown header type
+      break;
+  }
+  this->msg_ = "footer does not match header: ";
+  return RxEvaluationResult::NOK;  // footer does not match expected footer for frame type
+}
+// reset rx buffer
+void LD2410Srx::reset_() {
+  this->end_pos_ = 0;
+  this->header_footer_size_ = 0;
+  this->size_field_size_ = 0;
+  this->frame_type_ = RxFrameType::UNKNOWN;
+  this->payload_ready_ = false;
+  this->payload_pos_ = 0;
+  this->payload_size_ = 0;
+  this->expected_frame_size_ = 0;
+}
+
+int LD2410Srx::read_int(const uint8_t *buffer, size_t pos, size_t len) {
+  unsigned int ret = 0;
+  int shift = 0;
+  for (size_t i = 0; i < len; i++) {
+    ret |= static_cast<unsigned int>(buffer[pos + i]) << shift;
+    shift += 8;
+  }
+  return ret;
+};
+
+#pragma endregion
+
+#pragma region LD2410Sschedule
+
+// Appends new task to schedule
+void LD2410Sschedule::append(uint16_t command, uint16_t sub_command) {
+  ESP_LOGI(TAG, "++: pos:[%d], cmd:%04x", this->last_, command);
+
+  if (this->last_ >= TX_SCHEDULE_BUFFER_SIZE) {
+    ESP_LOGE(TAG, "++: pos:[%d], cmd:%04x, Buffer overflow, reseting buffer !!!", this->last_ - 1, command);
+
+    this->reset();
+    this->state_ = TxCmdState::ERROR;
+    return;
+  }
+
+  if (this->last_ <= 0) {
+    // first cmd must be config start
+    if (command != CONFIG_MODE_START_CMD)
+      this->append(CONFIG_MODE_START_CMD);
+  } else {
+    // if last cmd is config end it won't be possible tu just append new command
+    if (this->commands_[this->last_ - 1].command == CONFIG_MODE_END_CMD && command != CONFIG_MODE_START_CMD) {
+      // If config end is not already sent - another config start must be appended
+      if (this->active_ == this->last_ - 1 && this->state_ != TxCmdState::SCHEDULED) {
+        ESP_LOGD(TAG, "Last cmd is config end and it's already executing => appending config start");
+        this->append(CONFIG_MODE_START_CMD);
+      }
+
+      // ... otherwise previous config end can be deleted
+      else {
+        ESP_LOGD(TAG, "Last cmd was config end and it's not executing executing yet => deleting config end");
+        this->last_--;
+      }
+    }
+  }
+
+  this->commands_[this->last_].command = command;
+  this->commands_[this->last_].sub_command = sub_command;
+
+  if (this->state_ == TxCmdState::EMPTY) {
+    this->state_ = TxCmdState::SCHEDULED;
+  }
+
+  this->last_++;
+}
+// Returns active scheduled task status
+TxCmdState LD2410Sschedule::check_state() {
+  switch (this->state_) {
+    case TxCmdState::SCHEDULED:
+      this->schedule_();
+      break;
+
+    case TxCmdState::SENT:
+      if (App.get_loop_component_start_time() > this->time_started_ + TX_CONFIRMATION_TIMEOUT) {
+        if (this->retry_count_ < TX_MAX_RESEND) {
+          this->resend_();
+
+        } else {
+          if (this->restart_count_ < TX_MAX_RESTART) {
+            this->restart_();
+          } else {
+            this->give_up_();
+          }
+        }
+      }
+      break;
+
+    case TxCmdState::EMPTY:
+
+      // schedule has passed the end
+      if (!this->check_append_config_end_())
+        this->check_clear_();
+      break;
+
+    case TxCmdState::SEND:
+    default:
+      break;
+  }
+
+  return this->state_;
+}
+// Verifies if received response matches expected, if so procedes to next scheduled command
+void LD2410Sschedule::verify_response(uint16_t command_word) {
+  int16_t expected = this->get_command() | CMD_CONFIRMATION;
+  if (command_word == expected) {
+    ESP_LOGV(TAG, "::< pos:%d[%d], cmd:%04x, Sending confirmed, rx:%x", this->active_, this->last_ - 1,
+             this->get_command(), command_word);
+
+    switch (command_word) {
+      // config start confirmed
+      case CONFIG_MODE_START_CMD | CMD_CONFIRMATION:
+        this->config_mode_ = true;
+        break;
+
+      // config end confirmed
+      case CONFIG_MODE_END_CMD | CMD_CONFIRMATION:
+        this->config_mode_ = false;
+        break;
+
+      default:
+        break;
+    }
+
+    if (!this->check_append_config_end_()) {
+      if (check_clear_()) {
+        return;
+      }
+    }
+
+    // procede to next task
+    this->active_++;
+    this->state_ = TxCmdState::SCHEDULED;
+    if (this->active_ >= TX_SCHEDULE_BUFFER_SIZE) {
+      ESP_LOGE(TAG, "::: Schedule overflow, Reseting");
+      this->reset();
+    }
+
+  } else {
+    if (this->state_ == TxCmdState::SENT) {
+      ESP_LOGE(TAG, "::< pos:%d[%d], cmd:%04x, received:%x, Received confirmation for wrong command", this->active_,
+               this->last_, this->get_command(), command_word);
+    } else {
+      if (this->active_ > 0 && command_word == (this->commands_[this->active_ - 1].command | CMD_CONFIRMATION)) {
+        ESP_LOGE(TAG, "::< pos:%d[%d], cmd:%04x, received:%x, Received unexpected confirmation for previous cmd",
+                 this->active_, this->last_, this->get_command(), command_word);
+      } else {
+        ESP_LOGE(TAG, "::< pos:%d[%d], cmd:%04x, received:%x, Received unexpected confirmation", this->active_,
+                 this->last_, this->get_command(), command_word);
+      }
+    }
+  }
+}
+
+// Confirm frame ready
+void LD2410Sschedule::confirm_sent() {
+  if (this->state_ == TxCmdState::SCHEDULED || this->state_ == TxCmdState::SEND) {
+    this->time_started_ = App.get_loop_component_start_time();
+    this->state_ = TxCmdState::SENT;
+    this->config_mode_ = true;
+  } else {
+    ESP_LOGE(TAG, ":>> pos:%d[%d], cmd:%04x, Sending NOT CONFIRMED", this->active_, this->last_, this->get_command());
+  }
+}
+
+uint16_t LD2410Sschedule::get_command() { return this->commands_[this->active_].command; }
+uint16_t LD2410Sschedule::get_sub_command() { return this->commands_[this->active_].sub_command; }
+// Resets schedule buffer
+void LD2410Sschedule::reset() {
+  this->last_ = 0;
+  this->active_ = 0;
+  this->time_started_ = App.get_loop_component_start_time();
+  this->retry_count_ = 0;
+  this->restart_count_ = 0;
+  this->state_ = TxCmdState::EMPTY;
+  ESP_LOGI(TAG, "::: Schedule cleared");
+}
+void LD2410Sschedule::schedule_() {
+  this->time_started_ = App.get_loop_component_start_time();
+  this->retry_count_ = 0;
+  ESP_LOGD(TAG, "::> pos:%d[%d], cmd:%04x, Scheduled", this->active_, this->last_ - 1, this->get_command());
+}
+void LD2410Sschedule::resend_() {
+  this->time_started_ = App.get_loop_component_start_time();
+  this->retry_count_++;
+  this->state_ = TxCmdState::SEND;
+  ESP_LOGW(TAG, ":>> pos:%d[%d], cmd:%04x, retry:%d, restart:%d, Send Timeout Expired, Resend!", this->active_,
+           this->last_ - 1, this->get_command(), this->retry_count_, this->restart_count_);
+}
+void LD2410Sschedule::restart_() {
+  this->active_ = 0;
+  this->time_started_ = App.get_loop_component_start_time();
+  this->retry_count_ = 0;
+  this->restart_count_++;
+  this->state_ = TxCmdState::SCHEDULED;
+  ESP_LOGW(TAG, ":>> pos:%d[:%d], cmd:%04x, retry:%d, restart:%d, Resend limit reached, Restart sequence!!",
+           this->active_, this->last_ - 1, this->get_command(), this->retry_count_, this->restart_count_);
+}
+void LD2410Sschedule::give_up_() {
+  ESP_LOGE(
+      TAG,
+      ":>> pos:%d[:%d], cmd:%04x, retry:%d, restart:%d, Restart sequence limit reached, Giving up, Reseting buffer!!!",
+      this->active_, this->last_ - 1, this->get_command(), this->retry_count_, this->restart_count_);
+  this->last_ = 0;
+  this->active_ = 0;
+  this->time_started_ = App.get_loop_component_start_time();
+  this->retry_count_ = 0;
+  this->restart_count_ = 0;
+  this->state_ = TxCmdState::ERROR;
+}
+bool LD2410Sschedule::check_append_config_end_() {
+  if (this->active_ < this->last_ - 1 || this->last_ <= 0 || !this->config_mode_)
+    return false;
+  ESP_LOGD(TAG, "+:< Appending config end, pos:%d, ", this->active_);
+  this->append(CONFIG_MODE_END_CMD);
+  return true;
+}
+bool LD2410Sschedule::check_clear_() {
+  if (this->active_ < this->last_ - 1 || this->last_ <= 0 || this->config_mode_)
+    return false;
+  this->reset();
+  return true;
+}
+
+#pragma endregion
+
+}  // namespace ld2410s
+}  // namespace esphome
