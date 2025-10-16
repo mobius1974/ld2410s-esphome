@@ -63,26 +63,35 @@ uart:
   #  sequence:
   #    - lambda: UARTDebug::log_hex(direction, bytes, ':');
 
-deep_sleep:
-  wakeup_pin: GPIO15
-  wakeup_pin_mode: KEEP_AWAKE
-
 ld2410s:
   uart_id: uart_bus
+
+sensor:
+  - platform: ld2410s
+    target_distance:
+      name: Target Distance
+    calibration_progress:
+      name: Calibration  progress
 
 binary_sensor:
   - platform: ld2410s
     has_target:
       name: Presence
-    has_threshold_update:
-      name: Threshold update running
+    has_calibration_running:
+      name: Calibration running
 
-sensor:
+text_sensor:
   - platform: ld2410s
-    target_distance:
-      name : Target Distance
-    threshold_update: 
-      name: Threshold update progress
+    fw_version:
+      name: Firmware version
+    threshold_triggers:
+      name: Threshold Triggers
+    threshold_holds:
+      name: Threshold Holds
+    threshold_snrs:
+      name: Threshold SNRs
+    energy_values:
+      name: Energy Values
 
 number:
   - platform: ld2410s
@@ -97,28 +106,28 @@ number:
     distance_reporting_frequency:
       name: Distance reporting frequency
 
+    threshold_trigger:
+      name: Threshold Trigger
+    threshold_hold:
+      name: Threshold Hold
+    threshold_snr:
+      name: TThreshold SNR
+    threshold_selected_gate:
+      name: TrigThThresholdresholdger Selected Gate
+
 button:
-  - platform: template
-    name: Enter sleep mode
-    entity_category: CONFIG
-    on_press:
-      - deep_sleep.enter: {}
   - platform: ld2410s
-    enable_config:
-      name: Enable config mode
-    disable_config:
-      name: Disable config mode
-    apply_config:
-      name: Apply config changes
-    auto_threshold:
-      name: Start auto threshold update
+    calibration:
+      name: Start auto calibration
+    factory_reset:
+      name: Factory reset
 
 select:
   - platform: ld2410s
     response_speed:
       name: Response speed
 
-text_sensor:
+switch:
   - platform: ld2410s
-    fw_version:
-      name: Firmware version
+    minimal_output:
+      name: Minimal output
