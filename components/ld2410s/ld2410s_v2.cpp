@@ -44,13 +44,13 @@ void LD2410S::calibration() { this->tx_schedule_.append(CALIBRATION_CMD); }
 void LD2410S::factory_reset() {
   ESP_LOGI(TAG, "factory_reset");
 
-  this->max_dist_ = 16;
+  this->max_dist_ = 8;
   this->min_dist_ = 0;
   this->delay_ = 10;
   this->status_freq_ = 80;
   this->dist_freq_ = 80;
 
-  this->minimal_output_ = true;
+  this->minimal_output_ = false;
 
   this->resp_speed_ = 5;
 
