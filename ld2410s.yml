@@ -45,9 +45,8 @@ web_server:
     password: !secret web_server_password
 
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://mobius1974/ld2410s-esphome
+    components: ["ld2410s"]
 
 uart:
   id: uart_bus
