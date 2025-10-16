@@ -2,21 +2,23 @@ import esphome.codegen as cg
 from esphome.components import select
 import esphome.config_validation as cv
 from esphome.const import ENTITY_CATEGORY_CONFIG
+
 from .. import CONF_LD2410S_ID, LD2410S, ld2410s_ns
 
+CONF_SELECTS = ["Normal", "Fast"]
 CONF_RESPONSE_SPEED = "response_speed"
-CONF_SELECTS = [
-    "Normal",
-    "Fast"
-]
 
-LD2420ResponseSpeedSelect = ld2410s_ns.class_("LD2420ResponseSpeedSelect", cg.Component)
+LD2410sResponseSpeedSelect = ld2410s_ns.class_(
+    "LD2410sResponseSpeedSelect", cg.Component
+)
+LD2410sExecCommandSelect = ld2410s_ns.class_("LD241s0ExecCommandSelect", cg.Component)
 
 CONFIG_SCHEMA = {
     cv.GenerateID(CONF_LD2410S_ID): cv.use_id(LD2410S),
-    cv.Required(CONF_RESPONSE_SPEED): select.select_schema(
-        LD2420ResponseSpeedSelect,
+    cv.Optional(CONF_RESPONSE_SPEED): select.select_schema(
+        LD2410sResponseSpeedSelect,
         entity_category=ENTITY_CATEGORY_CONFIG,
+        icon="mdi:speedometer",
     ),
 }
 
