@@ -1,5 +1,3 @@
-#include "ld2410s.h"
-
 namespace esphome {
 namespace ld2410s {
 
@@ -300,7 +298,6 @@ bool LD2410S::receive_() {
   while (this->available() && rx_bytes_count < RX_MAX_BYTES_PER_LOOP) {
     if (!this->read_byte(&rx))
       break;
-    ESP_LOGI(TAG, "RX [%d] ", rx);
     rx_bytes_count++;
 
     if (this->rx_.receive_byte(this->loop_count_, rx) == RxEvaluationResult::OK) {
@@ -520,12 +517,10 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
       break;
 
     case RxEvaluationResult::NOK:
-      break;
     default:
-      ESP_LOGE(TAG, "<XX [%d] %s < %s", loop_count, this->msg_.c_str(),
-               format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
-      this->reset_();
+      //ESP_LOGE(TAG, "<XX [%d] %s < %s", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
       result = RxEvaluationResult::UNKNOWN;
+      this->reset_();
       break;
   }
 
@@ -581,9 +576,10 @@ RxEvaluationResult LD2410Srx::evaluate_header_() {
     this->frame_type_ =
         RxFrameType::UNKNOWN;  // not enough data yet to determine frame type, but it fits CMD frame header
     this->header_footer_size_ = 0;
-    this->msg_ = "Unkown header";
     return RxEvaluationResult::UNKNOWN;
   }
+
+  this->msg_ = "Unkown header";
   this->frame_type_ = RxFrameType::NOK;  // bad header
   return RxEvaluationResult::NOK;
 }
