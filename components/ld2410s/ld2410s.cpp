@@ -21,6 +21,7 @@ void LD2410S::setup() {
   this->init_();
 #endif
 }
+
 void LD2410S::loop() {
   if (!this->init_done_) {
     this->status_set_warning();
@@ -36,8 +37,7 @@ void LD2410S::loop() {
 }
 float LD2410S::get_setup_priority() const { return setup_priority::HARDWARE; }
 
-// prepares scheduled frames for sending
-// executes actual data sending
+// подготавливает запланированные кадры для отправки и выполняет фактическую отправку данных
 void LD2410S::send_() {
   switch (this->tx_schedule_.check_state()) {
     case TxCmdState::SCHEDULED:
@@ -57,7 +57,7 @@ void LD2410S::send_() {
 
     case TxCmdState::ERROR:
       this->status_set_warning();
-      ESP_LOGW(TAG, ">XX [%d] Scheduling command send failed!!!, re-initializing...", this->loop_count_);
+      ESP_LOGW(TAG, ">XX [%d] Scheduling command send failed!!!, re-initializing...", this->loop_count_); // Сообщение: Не удалось отправить команду планирования!!!, выполняется повторная инициализация...
       this->tx_schedule_.reset();
 #ifdef LD2410S_V2
       this->init_();
@@ -69,7 +69,7 @@ void LD2410S::send_() {
 
     case TxCmdState::EMPTY:
       if (!this->init_done_) {
-        ESP_LOGI(TAG, "+++ [%d] Setup done", this->loop_count_);
+        ESP_LOGI(TAG, "+++ [%d] Setup done", this->loop_count_); // Сообщение: Настройка завершена
         this->init_done_ = true;
       }
       break;
@@ -79,26 +79,27 @@ void LD2410S::send_() {
       break;
   }
 }
-// builds CMD_FRAME
+
+// создает CMD_FRAME
 void LD2410S::build_cmd_frame_(uint16_t command, uint16_t sub_command) {
-  ESP_LOGD(TAG, ":>> [%d] %04x Prepare frame ", this->loop_count_, command);
+  ESP_LOGD(TAG, ":>> [%d] %04x Prepare frame ", this->loop_count_, command); // Сообщение: Подготовка кадра
 
   this->tx_frame_size_ = 0;
 
-  // Header
+  // Заголовок кадра
   append_seq_data(this->tx_frame_, this->tx_frame_size_, &CMD_FRAME_HEADER);
 
-  // Frame size placeholder
+  // Заполнитель размера кадра
   uint16_t size_start = this->tx_frame_size_;
   this->tx_frame_size_ += sizeof(size_start);
 
-  // Data start
+  // Запуск передачи данных
   uint16_t data_start = this->tx_frame_size_;
 
-  // Command
+  // Команда
   append_seq_data(this->tx_frame_, this->tx_frame_size_, &command, 1);
 
-  // Parameters
+  // Параметры
   switch (command) {
     case OUTPUT_MODE_SWITCH_CMD: {
       if (this->minimal_output_) {
@@ -159,7 +160,7 @@ void LD2410S::build_cmd_frame_(uint16_t command, uint16_t sub_command) {
 
     case CFG_PARAMS_WRITE_CMD:
       if (this->resp_speed_ == 0) {
-        ESP_LOGD(TAG, "CFG_PARAMS_WRITE_CMD Error, bad new_config");
+        ESP_LOGD(TAG, "CFG_PARAMS_WRITE_CMD Error, bad new_config"); // Сообщение: Ошибка, неверный new_config
         return;
       } else {
         switch (sub_command) {
@@ -276,11 +277,11 @@ void LD2410S::build_cmd_frame_(uint16_t command, uint16_t sub_command) {
       break;
   }
 
-  // Frame size
+  // размер кадра
   uint16_t data_size = this->tx_frame_size_ - data_start;
   append_seq_data(this->tx_frame_, size_start, &data_size);
 
-  // Footer
+  // окончание кадра
   append_seq_data(this->tx_frame_, this->tx_frame_size_, &CMD_FRAME_FOOTER);
 }
 
@@ -292,7 +293,7 @@ void LD2410S::sending_pause_() {
   });
 }
 
-// receives frames and starts processing
+// получает кадры и начинает обработку
 bool LD2410S::receive_() {
   uint8_t rx;
   int rx_bytes_count = 0;
@@ -301,14 +302,15 @@ bool LD2410S::receive_() {
     if (!this->read_byte(&rx))
       break;
     rx_bytes_count++;
-
-    if (this->rx_.receive_byte(this->loop_count_, rx) == RxEvaluationResult::OK) {
+    RxEvaluationResult result = this->rx_.receive_byte(this->loop_count_, rx);
+    if (result == RxEvaluationResult::OK) {
       this->parse_();
     }
   }
   return rx_bytes_count > 0;
 }
-// starts received frame decoding, and handling received data
+
+//начинается декодирование полученного кадра и обработка полученных данных
 void LD2410S::parse_() {
   switch (this->rx_.frame_type()) {
     case RxFrameType::SHORT_DATA_FRAME:
@@ -325,10 +327,11 @@ void LD2410S::parse_() {
       break;
 
     default:
-      ESP_LOGE(TAG, "Received Unknown package type!!!");
+      ESP_LOGE(TAG, "Received Unknown package type!!!"); // Сообщение: Получен неизвестный тип посылки!!!
       break;
   }
 }
+
 void LD2410S::parse_short_data_frame_() {
   ESP_LOGI(TAG, "<   [%d] short data < %s", this->loop_count_,
            format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
@@ -344,9 +347,10 @@ void LD2410S::parse_short_data_frame_() {
   this->publish_presence_(presence_state);
 #endif
 }
+
 void LD2410S::parse_data_frame_() {
   switch (this->rx_.payload_data()[0]) {
-    case 0x01:  // standard data
+    case 0x01:  // стандартные данные
     {
       ESP_LOGI(TAG, "<   [%d] std data < %s", this->loop_count_,
                format_hex_pretty(this->rx_.frame_data(), this->rx_.frame_size() + 1, ' ').c_str());
@@ -367,7 +371,7 @@ void LD2410S::parse_data_frame_() {
       break;
     }
 
-    case 0x03:  // calibration progress
+    case 0x03:  // ход калибровки
     {
 #ifdef LD2410S_V2
       ESP_LOGI(TAG, "<   [%d] std calibration < %s", this->loop_count_,
@@ -396,6 +400,7 @@ void LD2410S::parse_data_frame_() {
       break;
   }
 }
+
 void LD2410S::parse_cmd_frame_() {
   uint8_t *data_start = this->rx_.payload_data();
   uint16_t read_position = 0;
@@ -418,7 +423,7 @@ void LD2410S::parse_cmd_frame_() {
   uint8_t *data = &data_start[read_position];
 
   switch (command_word) {
-    // Process acknowledgements
+    // Подтверждения процесса
 
 #ifdef LD2410S_V2
 
@@ -434,7 +439,7 @@ void LD2410S::parse_cmd_frame_() {
       ESP_LOGI(TAG, "Calibration started");
       break;
 
-      // Write command acknowledgements
+      // Запись подтверждений команд
 
     case CFG_PARAMS_WRITE_CMD | CMD_CONFIRMATION:
       ESP_LOGI(TAG, "Config written");
@@ -456,7 +461,7 @@ void LD2410S::parse_cmd_frame_() {
       ESP_LOGI(TAG, "Trigger SNR written");
       break;
 
-      // Read command acknowledgements
+      // Чтение подтверждений команд
 
     case CFG_PARAMS_READ_CMD | CMD_CONFIRMATION:
       this->parse_ack_config_read_(data);
@@ -489,103 +494,120 @@ void LD2410S::parse_cmd_frame_() {
 
 #pragma region LD2410Srx
 
-// appends one byte to rx buffer, and checks if that makes complete frame
+// добавляет один байт в буфер rx и проверяет, получился ли полный кадр
 RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
-  if (this->payload_ready_) {
-    this->reset_();
+  if (this->payload_ready_) {               // Кадр закончен и нужно начинать новый
+    this->reset_();                         // Сброс состояния приемника данных
   }
 
-  this->rcv_buffer_[this->end_pos_] = byte;
+  this->rcv_buffer_[this->end_pos_] = byte; // Помещаем байт в буфер приема rcv_buffer_ в позицию end_pos_
 
-  RxEvaluationResult result = this->evaluate_header_();
-  if (result == RxEvaluationResult::OK) {
-    result = this->evaluate_size_();
-    if (result == RxEvaluationResult::OK) {
-      result = this->evaluate_footer_();
+  RxEvaluationResult result = this->evaluate_header_(); // Проверяем является ли байт частью заголовка кадра
+  if (result == RxEvaluationResult::OK) {               // Если байт часть кадра
+    result = this->evaluate_size_();                    // Проверяем является ли байт частью данных кадра
+    if (result == RxEvaluationResult::OK) {             // Если байт часть данных
+      result = this->evaluate_footer_();                // Проверяем является ли байт частью окончания кадра
     }
   }
-
-  switch (result) {
-    case RxEvaluationResult::OK:
-      this->payload_ready_ = true;
+  // Обрабатываем результат проверки кадра
+  switch (result) { 
+    case RxEvaluationResult::OK:                        // Если получили кадр полностью
+      this->payload_ready_ = true;                      // Устанавливаем конец приема кадра
       break;
 
-    case RxEvaluationResult::UNKNOWN:
-      this->end_pos_++;
-      if (this->end_pos_ > RX_TX_BUFFER_SIZE) {
-        ESP_LOGE(TAG, "XX< [%d] Received data buffer overflow, resetting", loop_count);
-        this->reset_();
+    case RxEvaluationResult::UNKNOWN:                   // Если кадр полностью не принят
+      this->end_pos_++;                                 // увеличиваем позицию в буфере на следующий байт
+      if (this->end_pos_ > RX_TX_BUFFER_SIZE) {         // Если буфер приема заполнен
+        ESP_LOGE(TAG, "XX< [%d] Received data buffer overflow, resetting", loop_count); 
+        this->reset_();                                 // делаем полный сброс буфера пиема и готовим его к новому кадру
       }
       break;
 
-    case RxEvaluationResult::NOK:
-    default:
-      //ESP_LOGE(TAG, "<XX [%d] %s < %s", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
-      this->reset_();
-      result = RxEvaluationResult::UNKNOWN;
+    case RxEvaluationResult::NOK:                       // Если обнаружен неизвесный тип данных
+    default:                                            // или любой другой случай отличный от выше указанных
+      ESP_LOGE(TAG, "<XX [%d] %s (%s)", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
+      this->reset_();                                   // делаем полный сброс буфера пиема и готовим его к новому кадру
+      result = RxEvaluationResult::UNKNOWN;             // меняем состояние кадра на неполное заполнение
       break;
   }
 
   return result;
 }
-// checks if current rx buffer contains header
+
+// проверяет, содержит ли текущий буфер rx заголовок
 RxEvaluationResult LD2410Srx::evaluate_header_() {
   switch (this->frame_type_) {
     case RxFrameType::CMD_FRAME:
     case RxFrameType::STD_DATA_FRAME:
     case RxFrameType::SHORT_DATA_FRAME:
-      return RxEvaluationResult::OK;  // already determined frame type
+      return RxEvaluationResult::OK;  // уже определенный тип кадра
 
     case RxFrameType::NOK:
-      return RxEvaluationResult::NOK;  // already determined bad header
+      return RxEvaluationResult::NOK;  //уже определен неверный кадра
 
     case RxFrameType::UNKNOWN:
     default:
-      break;  // need to determine frame type
+      break;  // необходимо определить тип кадра
   }
 
-  if (this->end_pos_ + 1 == sizeof(SHORT_DATA_FRAME_HEADER) &&
-      memcmp(&this->rcv_buffer_[0], &SHORT_DATA_FRAME_HEADER, sizeof(SHORT_DATA_FRAME_HEADER)) == 0) {
+  bool frame_len,frame_str;
+  
+  if ((this->end_pos_ + 1) == sizeof(SHORT_DATA_FRAME_HEADER)) frame_len=true;  // если количество байт в буфере равно длине заголовка SHORT_DATA_FRAME
+  else frame_len=false;
+  if (memcmp(&this->rcv_buffer_[0], &SHORT_DATA_FRAME_HEADER, sizeof(SHORT_DATA_FRAME_HEADER)) == 0) frame_str=true; // если последовательность байт из заголовка равна содержимому заголовка SHORT_DATA_FRAME
+  else frame_str=false; 
+  if ( frame_len && frame_str) {
     this->frame_type_ = RxFrameType::SHORT_DATA_FRAME;
     this->header_footer_size_ = sizeof(SHORT_DATA_FRAME_HEADER);
-    return RxEvaluationResult::OK;
+    return RxEvaluationResult::OK;            // тип кадра определен как заголовок SHORT_DATA_FRAME
   }
 
-  if (this->end_pos_ + 1 == sizeof(STD_DATA_FRAME_HEADER) &&
-      memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, sizeof(STD_DATA_FRAME_HEADER)) == 0) {
+  if ((this->end_pos_ + 1) == sizeof(STD_DATA_FRAME_HEADER)) frame_len=true;   // если количество байт в буфере равно длине заголовка STD_DATA_FRAME
+  else frame_len=false;
+  if (memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, sizeof(STD_DATA_FRAME_HEADER)) == 0) frame_str=true; // если последовательность байт из заголовка равна содержимому заголовка STD_DATA_FRAME
+  else frame_str=false;
+  if ( frame_len && frame_str) {
     this->frame_type_ = RxFrameType::STD_DATA_FRAME;
     this->header_footer_size_ = sizeof(STD_DATA_FRAME_HEADER);
-    return RxEvaluationResult::OK;
+    return RxEvaluationResult::OK;            // тип кадра определен как заголовок STD_DATA_FRAME
   }
 
-  if (this->end_pos_ + 1 == sizeof(CMD_FRAME_HEADER) &&
-      memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, sizeof(CMD_FRAME_HEADER)) == 0) {
+  if ((this->end_pos_ + 1) == sizeof(CMD_FRAME_HEADER)) frame_len=true;   // если количество байт в буфере равно длине заголовка CMD_FRAME
+  else frame_len=false;
+  if (memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, sizeof(CMD_FRAME_HEADER)) == 0) frame_str=true; // если последовательность байт из заголовка равна содержимому заголовка CMD_FRAME
+  else frame_str=false;
+  if ( frame_len && frame_str) {
     this->frame_type_ = RxFrameType::CMD_FRAME;
     this->header_footer_size_ = sizeof(CMD_FRAME_HEADER);
-    return RxEvaluationResult::OK;
+    return RxEvaluationResult::OK;            // тип кадра определен как CMD_FRAME
   }
 
-  if (this->end_pos_ + 1 < sizeof(STD_DATA_FRAME_HEADER) &&
-      memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, this->end_pos_ + 1) == 0) {
-    this->frame_type_ =
-        RxFrameType::UNKNOWN;  // not enough data yet to determine frame type, but it fits STD frame header
+  if (this->end_pos_ + 1 < sizeof(STD_DATA_FRAME_HEADER)) frame_len=true;
+  else frame_len=false;
+  if (memcmp(&this->rcv_buffer_[0], &STD_DATA_FRAME_HEADER, this->end_pos_ + 1) == 0) frame_str=true;
+  else frame_str=false;
+  if ( frame_len && frame_str) {
+    this->frame_type_ = RxFrameType::UNKNOWN;  // пока недостаточно данных для определения типа кадра, но он соответствует заголовку кадра STD
     this->header_footer_size_ = 0;
     return RxEvaluationResult::UNKNOWN;
   }
 
-  if (this->end_pos_ + 1 < sizeof(CMD_FRAME_HEADER) &&
-      memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, this->end_pos_ + 1) == 0) {
-    this->frame_type_ =
-        RxFrameType::UNKNOWN;  // not enough data yet to determine frame type, but it fits CMD frame header
+  if (this->end_pos_ + 1 < sizeof(CMD_FRAME_HEADER)) frame_len=true;
+  else frame_len=false;
+  if (memcmp(&this->rcv_buffer_[0], &CMD_FRAME_HEADER, this->end_pos_ + 1) == 0) frame_str=true;
+  else frame_str=false;
+  if ( frame_len && frame_str) {
+    this->frame_type_ = RxFrameType::UNKNOWN;  // пока недостаточно данных для определения типа кадра, но он соответствует заголовку кадра CMD
     this->header_footer_size_ = 0;
     return RxEvaluationResult::UNKNOWN;
   }
-
-  this->msg_ = "Unkown header";
-  this->frame_type_ = RxFrameType::NOK;  // bad header
+  
+  this->msg_ = "Bad header";
+  this->frame_type_ = RxFrameType::NOK;  // плохой заголовок
   return RxEvaluationResult::NOK;
 }
-// checks if current rx buffer has proper size for decoded header
+
+// проверяет, соответствует ли текущий буфер приёма размеру декодированного заголовка
 RxEvaluationResult LD2410Srx::evaluate_size_() {
   switch (this->frame_type_) {
     case RxFrameType::SHORT_DATA_FRAME:
@@ -610,57 +632,58 @@ RxEvaluationResult LD2410Srx::evaluate_size_() {
       break;
 
     case RxFrameType::UNKNOWN:
-      return RxEvaluationResult::UNKNOWN;  // not enough data yet to determine size
-    case RxFrameType::NOK:                 // already determined bad header
-    default:                               // unknown header type
+      return RxEvaluationResult::UNKNOWN;  // пока недостаточно данных для определения размера
+    case RxFrameType::NOK:                 // уже определен неверный заголовок
+    default:                               // неизвестный тип заголовка
       return RxEvaluationResult::NOK;
   }
 
   if (this->expected_frame_size_ == 0 || this->end_pos_ + 1 < this->expected_frame_size_) {
-    return RxEvaluationResult::UNKNOWN;  // not enough data yet to determine size
+    return RxEvaluationResult::UNKNOWN;  // пока недостаточно данных для определения размера
 
   } else if (this->end_pos_ + 1 > this->expected_frame_size_) {
     this->msg_ = "rx passed the expected frame, expected:" + to_string(this->expected_frame_size_);
-    return RxEvaluationResult::NOK;  // passed the end of short data frame
+    return RxEvaluationResult::NOK;  // подошёл к концу короткий фрейм данных
 
   } else {
-    return RxEvaluationResult::OK;  // correct size
+    return RxEvaluationResult::OK;  // правильный размер
   }
 }
-// checks if current rx buffer containts proper footer for decoded header
+// проверяет, содержит ли текущий буфер приёма правильный нижний колонтитул для декодированного заголовка
 RxEvaluationResult LD2410Srx::evaluate_footer_() {
   switch (this->frame_type_) {
-    case RxFrameType::SHORT_DATA_FRAME:  // footer matches expected for short data frame
+    case RxFrameType::SHORT_DATA_FRAME:  // окончание соответствует ожидаемому для короткого кадра данных
       if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &SHORT_DATA_FRAME_FOOTER,
                  sizeof(SHORT_DATA_FRAME_FOOTER)) == 0) {
         return RxEvaluationResult::OK;
       }
       break;
 
-    case RxFrameType::STD_DATA_FRAME:  // footer matches expected for standard data frame
+    case RxFrameType::STD_DATA_FRAME:  // окончание соответствует ожиданиям для стандартного кадра данных
       if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &STD_DATA_FRAME_FOOTER,
                  sizeof(STD_DATA_FRAME_FOOTER)) == 0) {
         return RxEvaluationResult::OK;
       }
       break;
 
-    case RxFrameType::CMD_FRAME:  // footer matches expected for command frame
+    case RxFrameType::CMD_FRAME:  // окончание соответствует ожидаемому командному кадру
       if (memcmp(&rcv_buffer_[this->end_pos_ - this->header_footer_size_ + 1], &CMD_FRAME_FOOTER,
                  sizeof(CMD_FRAME_FOOTER)) == 0) {
         return RxEvaluationResult::OK;
       }
       break;
 
-    case RxFrameType::UNKNOWN:  // not enough data yet to determine size
+    case RxFrameType::UNKNOWN:  // пока недостаточно данных для определения размера
       return RxEvaluationResult::UNKNOWN;
     case RxFrameType::NOK:  // already known bad data frame
     default:                // unknown header type
       break;
   }
   this->msg_ = "footer does not match header: ";
-  return RxEvaluationResult::NOK;  // footer does not match expected footer for frame type
+  return RxEvaluationResult::NOK;  // окончание не соответствует ожидаемому окончанию для типа кадра
 }
-// reset rx buffer
+
+// сброс буфера rx
 void LD2410Srx::reset_() {
   this->end_pos_ = 0;
   this->header_footer_size_ = 0;
@@ -686,7 +709,7 @@ int LD2410Srx::read_int(const uint8_t *buffer, size_t pos, size_t len) {
 
 #pragma region LD2410Sschedule
 
-// Appends new task to schedule
+// Добавляет новую команду в буфер передачи данных
 void LD2410Sschedule::append(uint16_t command, uint16_t sub_command) {
   ESP_LOGI(TAG, "++: pos:[%d], cmd:%04x", this->last_, command);
 
@@ -699,19 +722,19 @@ void LD2410Sschedule::append(uint16_t command, uint16_t sub_command) {
   }
 
   if (this->last_ <= 0) {
-    // first cmd must be config start
+    // первой командой должна быть команда config start
     if (command != CONFIG_MODE_START_CMD)
       this->append(CONFIG_MODE_START_CMD);
   } else {
-    // if last cmd is config end it won't be possible tu just append new command
+    // если последней командой была команда config end, то просто добавить новую команду будет невозможно
     if (this->commands_[this->last_ - 1].command == CONFIG_MODE_END_CMD && command != CONFIG_MODE_START_CMD) {
-      // If config end is not already sent - another config start must be appended
+      // Если конец конфигурации ещё не отправлен, необходимо добавить ещё один запуск конфигурации
       if (this->active_ == this->last_ - 1 && this->state_ != TxCmdState::SCHEDULED) {
         ESP_LOGD(TAG, "Last cmd is config end and it's already executing => appending config start");
         this->append(CONFIG_MODE_START_CMD);
       }
 
-      // ... otherwise previous config end can be deleted
+      // ... в противном случае предыдущую конфигурацию можно удалить
       else {
         ESP_LOGD(TAG, "Last cmd was config end and it's not executing executing yet => deleting config end");
         this->last_--;
@@ -728,7 +751,8 @@ void LD2410Sschedule::append(uint16_t command, uint16_t sub_command) {
 
   this->last_++;
 }
-// Returns active scheduled task status
+
+// Возвращает статус активной запланированной передачи
 TxCmdState LD2410Sschedule::check_state() {
   switch (this->state_) {
     case TxCmdState::SCHEDULED:
@@ -752,7 +776,7 @@ TxCmdState LD2410Sschedule::check_state() {
 
     case TxCmdState::EMPTY:
 
-      // schedule has passed the end
+      // передача подошла к концу
       if (!this->check_append_config_end_())
         this->check_clear_();
       break;
@@ -764,7 +788,8 @@ TxCmdState LD2410Sschedule::check_state() {
 
   return this->state_;
 }
-// Verifies if received response matches expected, if so procedes to next scheduled command
+
+// Проверяет, соответствует ли полученный ответ ожидаемому. Если да, то переходит к следующей запланированной команде
 void LD2410Sschedule::verify_response(uint16_t command_word) {
   int16_t expected = this->get_command() | CMD_CONFIRMATION;
   if (command_word == expected) {
@@ -772,12 +797,12 @@ void LD2410Sschedule::verify_response(uint16_t command_word) {
              this->get_command(), command_word);
 
     switch (command_word) {
-      // config start confirmed
+      // подтвержден запуск конфигурации
       case CONFIG_MODE_START_CMD | CMD_CONFIRMATION:
         this->config_mode_ = true;
         break;
 
-      // config end confirmed
+      // завершение настройки подтверждено
       case CONFIG_MODE_END_CMD | CMD_CONFIRMATION:
         this->config_mode_ = false;
         break;
@@ -792,7 +817,7 @@ void LD2410Sschedule::verify_response(uint16_t command_word) {
       }
     }
 
-    // procede to next task
+    // переходите к следующей передаче
     this->active_++;
     this->state_ = TxCmdState::SCHEDULED;
     if (this->active_ >= TX_SCHEDULE_BUFFER_SIZE) {
@@ -816,7 +841,7 @@ void LD2410Sschedule::verify_response(uint16_t command_word) {
   }
 }
 
-// Confirm frame ready
+// Подтвердите готовность кадра
 void LD2410Sschedule::confirm_sent() {
   if (this->state_ == TxCmdState::SCHEDULED || this->state_ == TxCmdState::SEND) {
     this->time_started_ = App.get_loop_component_start_time();
@@ -829,7 +854,8 @@ void LD2410Sschedule::confirm_sent() {
 
 uint16_t LD2410Sschedule::get_command() { return this->commands_[this->active_].command; }
 uint16_t LD2410Sschedule::get_sub_command() { return this->commands_[this->active_].sub_command; }
-// Resets schedule buffer
+
+// Сбрасывает буфер передачи
 void LD2410Sschedule::reset() {
   this->last_ = 0;
   this->active_ = 0;
@@ -839,11 +865,13 @@ void LD2410Sschedule::reset() {
   this->state_ = TxCmdState::EMPTY;
   ESP_LOGI(TAG, "::: Schedule cleared");
 }
+
 void LD2410Sschedule::schedule_() {
   this->time_started_ = App.get_loop_component_start_time();
   this->retry_count_ = 0;
   ESP_LOGD(TAG, "::> pos:%d[%d], cmd:%04x, Scheduled", this->active_, this->last_ - 1, this->get_command());
 }
+
 void LD2410Sschedule::resend_() {
   this->time_started_ = App.get_loop_component_start_time();
   this->retry_count_++;
@@ -851,6 +879,7 @@ void LD2410Sschedule::resend_() {
   ESP_LOGW(TAG, ":>> pos:%d[%d], cmd:%04x, retry:%d, restart:%d, Send Timeout Expired, Resend!", this->active_,
            this->last_ - 1, this->get_command(), this->retry_count_, this->restart_count_);
 }
+
 void LD2410Sschedule::restart_() {
   this->active_ = 0;
   this->time_started_ = App.get_loop_component_start_time();
@@ -860,6 +889,7 @@ void LD2410Sschedule::restart_() {
   ESP_LOGW(TAG, ":>> pos:%d[:%d], cmd:%04x, retry:%d, restart:%d, Resend limit reached, Restart sequence!!",
            this->active_, this->last_ - 1, this->get_command(), this->retry_count_, this->restart_count_);
 }
+
 void LD2410Sschedule::give_up_() {
   ESP_LOGE(
       TAG,
@@ -872,6 +902,7 @@ void LD2410Sschedule::give_up_() {
   this->restart_count_ = 0;
   this->state_ = TxCmdState::ERROR;
 }
+
 bool LD2410Sschedule::check_append_config_end_() {
   if (this->active_ < this->last_ - 1 || this->last_ <= 0 || !this->config_mode_)
     return false;
@@ -879,6 +910,7 @@ bool LD2410Sschedule::check_append_config_end_() {
   this->append(CONFIG_MODE_END_CMD);
   return true;
 }
+
 bool LD2410Sschedule::check_clear_() {
   if (this->active_ < this->last_ - 1 || this->last_ <= 0 || this->config_mode_)
     return false;
