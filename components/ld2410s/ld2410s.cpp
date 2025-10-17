@@ -300,6 +300,7 @@ bool LD2410S::receive_() {
   while (this->available() && rx_bytes_count < RX_MAX_BYTES_PER_LOOP) {
     if (!this->read_byte(&rx))
       break;
+    ESP_LOGI(TAG, "RX [%d] ", rx);
     rx_bytes_count++;
 
     if (this->rx_.receive_byte(this->loop_count_, rx) == RxEvaluationResult::OK) {
