@@ -303,7 +303,7 @@ bool LD2410S::receive_() {
     if (rx < 0 )
     //if (!this->read_byte(&rx))
       break;
-    ESP_LOGD(TAG, "<XX Reseive byte [%d] = [%2x]", rx_bytes_count,  rx);
+    //ESP_LOGD(TAG, "<XX Reseive byte [%d] = [%2x]", rx_bytes_count,  rx);
     rx_bytes_count++;
     RxEvaluationResult result = this->rx_.receive_byte(this->loop_count_, rx);
     if (result == RxEvaluationResult::OK) {
