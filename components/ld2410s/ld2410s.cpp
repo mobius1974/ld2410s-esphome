@@ -301,6 +301,7 @@ bool LD2410S::receive_() {
   while (this->available() && rx_bytes_count < RX_MAX_BYTES_PER_LOOP) {
     if (!this->read_byte(&rx))
       break;
+    ESP_LOGD(TAG, "<XX Reseive byte [%d] = [%2x]", rx_bytes_count,  rx);
     rx_bytes_count++;
     RxEvaluationResult result = this->rx_.receive_byte(this->loop_count_, rx);
     if (result == RxEvaluationResult::OK) {
@@ -501,7 +502,7 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
   }
 
   this->rcv_buffer_[this->end_pos_] = byte; // Помещаем байт в буфер приема rcv_buffer_ в позицию end_pos_
-  ESP_LOGD(TAG, "<XX [%d] Reseive byte [%2x]", loop_count,  byte);
+  
   RxEvaluationResult result = this->evaluate_header_(); // Проверяем является ли байт частью заголовка кадра
   if (result == RxEvaluationResult::OK) {               // Если байт часть кадра
     result = this->evaluate_size_();                    // Проверяем является ли байт частью данных кадра
@@ -525,7 +526,7 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
 
     case RxEvaluationResult::NOK:                       // Если обнаружен неизвесный тип данных
     default:                                            // или любой другой случай отличный от выше указанных
-      ESP_LOGE(TAG, "<XX [%d] %s (%s)", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 10, ' ').c_str());
+      //ESP_LOGE(TAG, "<XX [%d] %s (%s)", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 10, ' ').c_str());
       this->reset_();                                   // делаем полный сброс буфера пиема и готовим его к новому кадру
       result = RxEvaluationResult::UNKNOWN;             // меняем состояние кадра на неполное заполнение
       break;
