@@ -525,7 +525,7 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
 
     case RxEvaluationResult::NOK:                       // Если обнаружен неизвесный тип данных
     default:                                            // или любой другой случай отличный от выше указанных
-      ESP_LOGE(TAG, "<XX [%d] %s (%s)", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 1, ' ').c_str());
+      ESP_LOGE(TAG, "<XX [%d] %s (%s)", loop_count, this->msg_.c_str(), format_hex_pretty(this->rcv_buffer_, end_pos_ + 10, ' ').c_str());
       this->reset_();                                   // делаем полный сброс буфера пиема и готовим его к новому кадру
       result = RxEvaluationResult::UNKNOWN;             // меняем состояние кадра на неполное заполнение
       break;
