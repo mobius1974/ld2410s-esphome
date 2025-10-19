@@ -64,7 +64,7 @@ static const uint32_t CMD_FRAME_HEADER = 0xFAFBFCFD;
 static const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 
 static const uint16_t CONFIG_MODE_START_CMD = 0x00FF;
-static const uint16_t CONFIG_MODE_START_VALUE = 0x0002;
+static const uint16_t CONFIG_MODE_START_VALUE = 0x0001;
 static const uint16_t CONFIG_MODE_END_CMD = 0x00FE;
 
 static const uint16_t OUTPUT_MODE_SWITCH_CMD = 0x007A;
