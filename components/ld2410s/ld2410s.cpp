@@ -295,11 +295,13 @@ void LD2410S::sending_pause_() {
 
 // получает кадры и начинает обработку
 bool LD2410S::receive_() {
-  uint8_t rx;
+  //uint8_t rx;
   int rx_bytes_count = 0;
 
   while (this->available() && rx_bytes_count < RX_MAX_BYTES_PER_LOOP) {
-    if (!this->read_byte(&rx))
+    int rx = this->read();
+    if (rx < 0)
+    //if (!this->read_byte(&rx))
       break;
     ESP_LOGD(TAG, "<XX Reseive byte [%d] = [%2x]", rx_bytes_count,  rx);
     rx_bytes_count++;
