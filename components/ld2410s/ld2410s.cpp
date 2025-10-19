@@ -501,7 +501,7 @@ RxEvaluationResult LD2410Srx::receive_byte(uint32_t loop_count, uint8_t byte) {
   }
 
   this->rcv_buffer_[this->end_pos_] = byte; // Помещаем байт в буфер приема rcv_buffer_ в позицию end_pos_
-
+  ESP_LOGD(TAG, "<XX [%d] Reseive byte [%2x]", loop_count,  byte);
   RxEvaluationResult result = this->evaluate_header_(); // Проверяем является ли байт частью заголовка кадра
   if (result == RxEvaluationResult::OK) {               // Если байт часть кадра
     result = this->evaluate_size_();                    // Проверяем является ли байт частью данных кадра
